@@ -29,6 +29,11 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'views', 'index.html'));
 });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 TaskHub 运行中: http://localhost:${PORT}`);
-});
+// 本地开发时直接监听，Vercel 部署时导出 app
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 TaskHub 运行中: http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
