@@ -55,7 +55,18 @@ function render(params = {}) {
   `;
 
   // Page content
-  html += `<div class="page" id="page-content">${renderPage(params)}</div>`;
+  let pageContent = renderPage(params);
+  // 在非协议页面底部添加法律声明
+  if (currentPage !== 'terms') {
+    pageContent += `
+      <div style="margin-top:30px; padding-top:16px; border-top:1px solid var(--border); text-align:center; font-size:0.72rem; color:var(--text-lighter); line-height:1.7;">
+        <p>本平台仅提供技术服务，不对用户发布内容承担责任</p>
+        <p>用户行为由其个人承担法律责任 · <a href="javascript:void(0)" onclick="navigate('terms')" style="color:var(--text-lighter); text-decoration:underline;">用户协议与免责声明</a></p>
+        <p>© 2026 TaskHub · dotask.help</p>
+      </div>
+    `;
+  }
+  html += `<div class="page" id="page-content">${pageContent}</div>`;
 
   // Tab bar
   html += `
@@ -91,6 +102,7 @@ function renderPage(params) {
     case 'my-accepts': return renderMyAccepts();
     case 'feedback': return renderFeedback();
     case 'feedback-list': return renderFeedbackList();
+    case 'terms': return renderTerms();
     default: return renderHome();
   }
 }
@@ -503,6 +515,14 @@ function renderAuth() {
         <label>密码</label>
         <input type="password" id="auth-password" placeholder="至少6位" maxlength="50">
       </div>
+      ${authMode === 'register' ? `
+        <div style="margin-bottom:16px; font-size:0.82rem; color:var(--text-light); line-height:1.6;">
+          <label style="display:flex; gap:8px; align-items:flex-start; cursor:pointer;">
+            <input type="checkbox" id="agree-terms" style="margin-top:3px; width:auto;">
+            <span>我已阅读并同意 <a href="javascript:void(0)" onclick="navigate('terms')" style="color:var(--primary); font-weight:600;">《用户协议与免责声明》</a></span>
+          </label>
+        </div>
+      ` : ''}
       <button class="btn btn-primary" onclick="doAuth()">${authMode === 'login' ? '登录' : '注册'}</button>
       <div class="switch-auth">
         ${authMode === 'login' ? '没有账号？' : '已有账号？'}
@@ -530,6 +550,14 @@ async function doAuth() {
   if (!username || !password) {
     errEl.textContent = '请填写用户名和密码';
     return;
+  }
+
+  if (authMode === 'register') {
+    const agree = document.getElementById('agree-terms');
+    if (!agree || !agree.checked) {
+      errEl.textContent = '请先阅读并同意《用户协议与免责声明》';
+      return;
+    }
   }
 
   const res = await API.post(`/api/${authMode}`, { username, password });
@@ -669,6 +697,74 @@ async function loadFeedbackList() {
       ${f.contact ? `<div style="font-size:0.8rem; color:var(--text-light);">📞 ${escapeHTML(f.contact)}</div>` : ''}
     </div>
   `).join('');
+}
+
+// ===== Terms / 用户协议 =====
+function renderTerms() {
+  return `
+    <div class="detail-back" onclick="navigate('auth')">← 返回</div>
+    <div class="detail-card">
+      <h1 style="font-size:1.2rem; text-align:center; margin-bottom:4px;">用户协议与免责声明</h1>
+      <p style="text-align:center; font-size:0.78rem; color:var(--text-lighter); margin-bottom:20px;">更新日期：2026年7月12日</p>
+
+      <h3 style="font-size:0.95rem; margin:16px 0 8px;">一、服务说明</h3>
+      <p style="font-size:0.85rem; color:var(--text); line-height:1.8;">
+        TaskHub（以下简称"本平台"）是一个有趣任务发布与接单的社区平台。本平台提供信息发布、交流互动等服务，用户可以在平台上发布任务、接受任务、评论互动。
+      </p>
+
+      <h3 style="font-size:0.95rem; margin:16px 0 8px;">二、用户行为规范</h3>
+      <p style="font-size:0.85rem; color:var(--text); line-height:1.8;">用户在使用本平台时，应遵守中华人民共和国相关法律法规，不得发布、传播以下内容：</p>
+      <ul style="font-size:0.85rem; color:var(--text); line-height:1.8; padding-left:20px; margin:8px 0;">
+        <li>反对宪法所确定的基本原则的；</li>
+        <li>危害国家安全、泄露国家秘密、颠覆国家政权、破坏国家统一的；</li>
+        <li>损害国家荣誉和利益的；</li>
+        <li>煽动民族仇恨、民族歧视，破坏民族团结的；</li>
+        <li>破坏国家宗教政策，宣扬邪教和封建迷信的；</li>
+        <li>散布谣言，扰乱社会秩序，破坏社会稳定的；</li>
+        <li>散布淫秽、色情、赌博、暴力、凶杀、恐怖或者教唆犯罪的；</li>
+        <li>侮辱或者诽谤他人，侵害他人合法权益的；</li>
+        <li>含有法律、行政法规禁止的其他内容的。</li>
+      </ul>
+
+      <h3 style="font-size:0.95rem; margin:16px 0 8px;">三、免责声明</h3>
+      <p style="font-size:0.85rem; color:var(--text); line-height:1.8;">
+        1. 本平台仅为用户提供信息发布与交流的技术服务，不对用户发布的内容进行逐一审查。用户对其发布的内容承担全部法律责任。
+      </p>
+      <p style="font-size:0.85rem; color:var(--text); line-height:1.8;">
+        2. 因用户发布的内容引起的任何法律纠纷、损失或损害，均由发布该内容的用户自行承担全部责任，本平台不承担任何连带责任。
+      </p>
+      <p style="font-size:0.85rem; color:var(--text); line-height:1.8;">
+        3. 本平台有权但无义务对用户发布的内容进行审核，发现违规内容时可不经通知予以删除，并视情节轻重对违规用户采取警告、封禁等措施。
+      </p>
+      <p style="font-size:0.85rem; color:var(--text); line-height:1.8;">
+        4. 用户间的任务交易、互动等行为属用户个人行为，本平台不参与、不担保，由此产生的纠纷由用户自行解决。
+      </p>
+
+      <h3 style="font-size:0.95rem; margin:16px 0 8px;">四、知识产权</h3>
+      <p style="font-size:0.85rem; color:var(--text); line-height:1.8;">
+        用户发布的内容，知识产权归原作者所有。用户发布内容即视为同意授予本平台在平台内展示、使用该内容的非排他性许可。
+      </p>
+
+      <h3 style="font-size:0.95rem; margin:16px 0 8px;">五、隐私保护</h3>
+      <p style="font-size:0.85rem; color:var(--text); line-height:1.8;">
+        本平台尊重用户隐私，不会主动向第三方泄露用户的注册信息。但根据法律法规或政府部门的强制性要求，本平台有可能披露用户相关信息。
+      </p>
+
+      <h3 style="font-size:0.95rem; margin:16px 0 8px;">六、协议修改</h3>
+      <p style="font-size:0.85rem; color:var(--text); line-height:1.8;">
+        本平台有权随时修改本协议，修改后的协议一经公布即替代原协议。用户继续使用本平台即视为同意修改后的协议。
+      </p>
+
+      <h3 style="font-size:0.95rem; margin:16px 0 8px;">七、联系方式</h3>
+      <p style="font-size:0.85rem; color:var(--text); line-height:1.8;">
+        如对本协议有任何疑问，可通过"意见反馈"功能联系我们。
+      </p>
+
+      <div style="margin-top:24px; padding-top:16px; border-top:1px solid var(--border); text-align:center;">
+        <button class="btn btn-primary" style="max-width:200px; margin:0 auto;" onclick="navigate('auth')">我已阅读，返回注册</button>
+      </div>
+    </div>
+  `;
 }
 
 // Init
