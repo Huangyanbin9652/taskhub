@@ -4,6 +4,9 @@ const path = require('path');
 const { initDB } = require('./db/init');
 const routes = require('./routes');
 
+// 修复 BigInt JSON 序列化（Turso 返回的 lastInsertRowid 是 BigInt）
+BigInt.prototype.toJSON = function() { return Number(this); };
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
