@@ -1,6 +1,5 @@
 const express = require('express');
-const session = require('express-session');
-const crypto = require('crypto');
+const cookieSession = require('cookie-session');
 const path = require('path');
 const { initDB } = require('./db/init');
 const routes = require('./routes');
@@ -13,19 +12,15 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Session 配置 - 使用加密 cookie
-const SESSION_SECRET = process.env.SESSION_SECRET || 'taskhub-secret-key-2026-very-long';
-
-app.use(session({
-  secret: SESSION_SECRET,
-  resave: false,
-  saveUninitialized: false,
-  cookie: { 
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7天
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax'
-  }
+// Session 配置 - 使用 cookie-session，数据存在浏览器加密 cookie 中
+// 这样 Vercel Serverless 不同容器之间也能共享登录状态
+app.use(cookieSession({
+  name: 'taskhub_session',
+  keys: [process.env.SESSION_SECRET || 'taskhub-secret-key-2026-very-long-and-random'],
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7天
+  httpOnly: true,
+  secure: false, // 允许 http 和 https
+  sameSite: 'lax'
 }));
 
 // API 路由
