@@ -89,6 +89,8 @@ function renderPage(params) {
     case 'detail': return renderDetail(params.id);
     case 'my-tasks': return renderMyTasks();
     case 'my-accepts': return renderMyAccepts();
+    case 'feedback': return renderFeedback();
+    case 'feedback-list': return renderFeedbackList();
     default: return renderHome();
   }
 }
@@ -99,6 +101,9 @@ function renderHome() {
     <div class="hero">
       <h1>🎯 发现有趣任务</h1>
       <p>接单做任务赚积分，或发布你的创意挑战</p>
+    </div>
+    <div style="text-align:right; margin-bottom:10px;">
+      <a href="javascript:void(0)" onclick="navigate('feedback')" style="font-size:0.82rem; color:var(--primary);">💬 意见反馈</a>
     </div>
     <div class="search-box">
       <input type="text" id="search-input" placeholder="搜索任务..." value="${currentKeyword}">
@@ -387,6 +392,8 @@ function renderProfile() {
     </div>
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="navigate('my-tasks')">📋 我发布的任务</button>
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="navigate('my-accepts')">🤝 我接的任务</button>
+    <button class="btn btn-outline" style="margin-bottom:12px;" onclick="navigate('feedback')">💬 意见反馈</button>
+    <button class="btn btn-outline" style="margin-bottom:12px;" onclick="navigate('feedback-list')">📥 查看反馈</button>
     <button class="btn btn-outline" style="margin-bottom:16px;" onclick="toggleEditProfile()">✏️ 编辑资料</button>
     <div id="edit-profile" style="display:none; margin-bottom:16px;">
       <div class="form-group">
@@ -578,6 +585,7 @@ function bindPageEvents() {
       break;
     case 'my-tasks': loadMyTasks(); break;
     case 'my-accepts': loadMyAccepts(); break;
+    case 'feedback-list': loadFeedbackList(); break;
   }
 }
 
@@ -595,6 +603,73 @@ navigate = function(page, params = {}) {
     bindPageEvents();
   }
 };
+
+// ===== Feedback =====
+function renderFeedback() {
+  return `
+    <div class="detail-back" onclick="navigate('home')">← 返回</div>
+    <h2 style="font-size:1.2rem; margin-bottom:6px;">💬 意见反馈</h2>
+    <p style="font-size:0.85rem; color:var(--text-light); margin-bottom:16px;">有任何建议、bug 反馈或功能想法，欢迎告诉我！</p>
+    <div class="form-group">
+      <label>反馈内容 <span style="color:var(--text-lighter);">(必填)</span></label>
+      <textarea id="fb-content" placeholder="请描述你的建议或问题..." maxlength="500" style="min-height:120px;"></textarea>
+    </div>
+    <div class="form-group">
+      <label>联系方式 <span style="color:var(--text-lighter);">(选填)</span></label>
+      <input type="text" id="fb-contact" placeholder="邮箱或微信，方便我回复你" maxlength="50">
+    </div>
+    <button class="btn btn-primary" onclick="submitFeedback()">📤 提交反馈</button>
+  `;
+}
+
+async function submitFeedback() {
+  const content = document.getElementById('fb-content').value.trim();
+  const contact = document.getElementById('fb-contact').value.trim();
+
+  if (!content) {
+    toast('请填写反馈内容');
+    return;
+  }
+
+  const res = await API.post('/api/feedback', { content, contact });
+  if (res.error) {
+    toast(res.error);
+  } else {
+    toast('✅ 感谢你的反馈！');
+    setTimeout(() => navigate('home'), 1500);
+  }
+}
+
+function renderFeedbackList() {
+  if (!currentUser) {
+    return `<div class="empty" style="padding-top:80px;"><div class="emoji">🔐</div><p>请先登录后查看</p><button class="btn btn-primary" style="max-width:200px; margin:16px auto 0;" onclick="navigate('auth')">去登录</button></div>`;
+  }
+  return `
+    <div class="detail-back" onclick="navigate('profile')">← 返回</div>
+    <h2 style="font-size:1.15rem; margin-bottom:14px;">📥 用户反馈列表</h2>
+    <div id="fb-list"><div class="empty"><div class="emoji">⏳</div><p>加载中...</p></div></div>
+  `;
+}
+
+async function loadFeedbackList() {
+  const res = await API.get('/api/feedback');
+  const el = document.getElementById('fb-list');
+  if (!res.feedbacks || res.feedbacks.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="emoji">📭</div><p>暂无反馈</p></div>`;
+    return;
+  }
+  el.innerHTML = res.feedbacks.map(f => `
+    <div class="task-card">
+      <div class="tc-author" style="margin-bottom:8px;">
+        <span class="avatar">💬</span>
+        <span><strong>${escapeHTML(f.username)}</strong></span>
+        <span style="color:var(--text-lighter); font-size:0.78rem;">· ${formatTime(f.created_at)}</span>
+      </div>
+      <div style="font-size:0.9rem; line-height:1.6; margin-bottom:8px;">${escapeHTML(f.content).replace(/\n/g, '<br>')}</div>
+      ${f.contact ? `<div style="font-size:0.8rem; color:var(--text-light);">📞 ${escapeHTML(f.contact)}</div>` : ''}
+    </div>
+  `).join('');
+}
 
 // Init
 init();

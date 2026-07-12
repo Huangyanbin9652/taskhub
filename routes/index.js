@@ -271,4 +271,38 @@ router.get('/api/leaderboard', async (req, res) => {
   }
 });
 
+// ===== 意见反馈 =====
+
+// 提交反馈（登录/未登录都可以）
+router.post('/api/feedback', async (req, res) => {
+  try {
+    const { content, contact } = req.body;
+    if (!content || !content.trim()) {
+      return res.status(400).json({ error: '反馈内容不能为空' });
+    }
+
+    const userId = req.session.user ? req.session.user.id : null;
+    const username = req.session.user ? req.session.user.username : '游客';
+
+    await db.prepare('INSERT INTO feedback (user_id, username, contact, content) VALUES (?, ?, ?, ?)').run(
+      userId, username, contact || '', content.trim()
+    );
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Feedback error:', e);
+    res.status(500).json({ error: '提交失败: ' + e.message });
+  }
+});
+
+// 查看所有反馈（仅登录用户可见）
+router.get('/api/feedback', async (req, res) => {
+  try {
+    const feedbacks = await db.prepare('SELECT * FROM feedback ORDER BY id DESC').all();
+    res.json({ feedbacks });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;

@@ -95,6 +95,17 @@ async function initDB() {
     )
   `);
   
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      username TEXT DEFAULT '',
+      contact TEXT DEFAULT '',
+      content TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  
   // 插入示例数据
   const countResult = await client.execute('SELECT COUNT(*) as count FROM users');
   if (countResult.rows[0].count === 0) {
