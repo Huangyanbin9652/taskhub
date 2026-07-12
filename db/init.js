@@ -8,14 +8,31 @@ let _initialized = false;
 function getClient() {
   if (_client) return _client;
   
-  const url = process.env.TURSO_DATABASE_URL;
-  const authToken = process.env.TURSO_AUTH_TOKEN;
+  let url = (process.env.TURSO_DATABASE_URL || '').trim();
+  const authToken = (process.env.TURSO_AUTH_TOKEN || '').trim();
+  
+  // 如果 URL 包含多个，取第一个（去掉换行和多余空格）
+  url = url.split(/\s+/)[0] || url;
   
   if (!url) {
     throw new Error('TURSO_DATABASE_URL environment variable is not set');
   }
   
-  _client = createClient({ url, authToken });
+  // 如果 URL 是 libsql:// 开头，尝试转换为 https://（Vercel 环境更兼容）
+  if (url.startsWith('libsql://')) {
+    url = url.replace('libsql://', 'https://');
+  }
+  
+  if (!url.startsWith('https://')) {
+    throw new Error('TURSO_DATABASE_URL must be libsql:// or https:// format');
+  }
+  
+  try {
+    _client = createClient({ url, authToken });
+  } catch (e) {
+    console.error('Create client error:', e.message);
+    throw e;
+  }
   return _client;
 }
 
