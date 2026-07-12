@@ -51,9 +51,17 @@ async function initDB() {
       avatar TEXT DEFAULT '',
       bio TEXT DEFAULT '',
       points INTEGER DEFAULT 0,
+      is_admin INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  
+  // 尝试给已有表加 is_admin 字段（如果不存在）
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0`);
+  } catch (e) {
+    // 字段已存在，忽略
+  }
   
   await client.execute(`
     CREATE TABLE IF NOT EXISTS tasks (
@@ -111,6 +119,12 @@ async function initDB() {
   if (countResult.rows[0].count === 0) {
     await seedDB(client);
   }
+  
+  // 设置 huangyanbin 为管理员
+  await client.execute({
+    sql: 'UPDATE users SET is_admin = 1 WHERE username = ?',
+    args: ['huangyanbin']
+  });
 }
 
 async function seedDB(client) {

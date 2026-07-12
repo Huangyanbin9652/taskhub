@@ -11,6 +11,18 @@ function requireLogin(req, res, next) {
   next();
 }
 
+// 中间件：检查管理员权限
+async function requireAdmin(req, res, next) {
+  if (!req.session.user) {
+    return res.status(401).json({ error: '请先登录' });
+  }
+  const user = await db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.session.user.id);
+  if (!user || !user.is_admin) {
+    return res.status(403).json({ error: '无管理员权限' });
+  }
+  next();
+}
+
 // 包装：确保数据库已初始化
 async function ensureDB(req, res, next) {
   try {
@@ -79,7 +91,7 @@ router.post('/api/login', async (req, res) => {
       return res.status(400).json({ error: '用户名或密码错误' });
     }
 
-    req.session.user = { id: user.id, username: user.username, avatar: user.avatar, points: user.points };
+    req.session.user = { id: user.id, username: user.username, avatar: user.avatar, points: user.points, is_admin: !!user.is_admin };
     res.json({ ok: true, user: req.session.user });
   } catch (e) {
     console.error('Login error:', e);
@@ -99,11 +111,12 @@ router.get('/api/me', async (req, res) => {
     if (!req.session.user) {
       return res.json({ user: null });
     }
-    const u = await db.prepare('SELECT id, username, avatar, points, bio FROM users WHERE id = ?').get(req.session.user.id);
+    const u = await db.prepare('SELECT id, username, avatar, points, bio, is_admin FROM users WHERE id = ?').get(req.session.user.id);
     if (u) {
       req.session.user.points = u.points;
       req.session.user.bio = u.bio;
-      return res.json({ user: u });
+      req.session.user.is_admin = !!u.is_admin;
+      return res.json({ user: { ...u, is_admin: !!u.is_admin } });
     }
     res.json({ user: null });
   } catch (e) {
@@ -149,11 +162,36 @@ router.get('/api/tasks/:id', async (req, res) => {
       return res.status(404).json({ error: '任务不存在' });
     }
 
-    const comments = await db.prepare(`SELECT c.*, u.username, u.avatar FROM comments c JOIN users u ON c.user_id = u.id WHERE c.task_id = ? ORDER BY c.id DESC`).all(req.params.id);
+    // 判断当前用户是否有权查看评论：任务发布者、已接单用户、管理员
+    let canViewComments = false;
+    let hasAccepted = false;
+    let isAdmin = false;
+    
+    if (req.session.user) {
+      if (task.user_id === req.session.user.id) {
+        canViewComments = true;
+      } else {
+        const accepted = await db.prepare('SELECT id FROM accepts WHERE task_id = ? AND user_id = ?').get(req.params.id, req.session.user.id);
+        if (accepted) {
+          canViewComments = true;
+          hasAccepted = true;
+        }
+      }
+      const adminUser = await db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.session.user.id);
+      if (adminUser && adminUser.is_admin) {
+        canViewComments = true;
+        isAdmin = true;
+      }
+    }
+
+    // 只有有权查看评论的用户才能看到评论
+    const comments = canViewComments 
+      ? await db.prepare(`SELECT c.*, u.username, u.avatar FROM comments c JOIN users u ON c.user_id = u.id WHERE c.task_id = ? ORDER BY c.id DESC`).all(req.params.id)
+      : [];
 
     const acceptCount = await db.prepare('SELECT COUNT(*) as count FROM accepts WHERE task_id = ?').get(req.params.id);
 
-    res.json({ task, comments, acceptCount: acceptCount ? acceptCount.count : 0 });
+    res.json({ task, comments, acceptCount: acceptCount ? acceptCount.count : 0, canViewComments, hasAccepted, isAdmin });
   } catch (e) {
     console.error('Task detail error:', e);
     res.status(500).json({ error: '获取任务详情失败: ' + e.message });
@@ -203,12 +241,27 @@ router.post('/api/tasks/:id/accept', requireLogin, async (req, res) => {
   }
 });
 
-// 评论
+// 评论（只有接了任务的用户或任务发布者才能评论）
 router.post('/api/tasks/:id/comments', requireLogin, async (req, res) => {
   try {
     const { content } = req.body;
     if (!content || !content.trim()) {
       return res.status(400).json({ error: '评论内容不能为空' });
+    }
+
+    const task = await db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+    if (!task) {
+      return res.status(404).json({ error: '任务不存在' });
+    }
+
+    // 检查权限：任务发布者、已接单用户、管理员
+    const isOwner = task.user_id === req.session.user.id;
+    const accepted = await db.prepare('SELECT id FROM accepts WHERE task_id = ? AND user_id = ?').get(req.params.id, req.session.user.id);
+    const adminUser = await db.prepare('SELECT is_admin FROM users WHERE id = ?').get(req.session.user.id);
+    const isAdmin = adminUser && adminUser.is_admin;
+
+    if (!isOwner && !accepted && !isAdmin) {
+      return res.status(403).json({ error: '需要先接单才能查看和回复留言' });
     }
 
     await db.prepare('INSERT INTO comments (task_id, user_id, content) VALUES (?, ?, ?)').run(req.params.id, req.session.user.id, content.trim());
@@ -300,6 +353,69 @@ router.get('/api/feedback', async (req, res) => {
   try {
     const feedbacks = await db.prepare('SELECT * FROM feedback ORDER BY id DESC').all();
     res.json({ feedbacks });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ===== 管理员功能 =====
+
+// 获取所有用户列表
+router.get('/api/admin/users', requireAdmin, async (req, res) => {
+  try {
+    const users = await db.prepare('SELECT id, username, avatar, bio, points, is_admin, created_at FROM users ORDER BY id DESC').all();
+    const result = [];
+    for (const u of users) {
+      const tc = await db.prepare('SELECT COUNT(*) as count FROM tasks WHERE user_id = ?').get(u.id);
+      result.push({ ...u, task_count: tc ? tc.count : 0 });
+    }
+    res.json({ users: result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 删除用户
+router.delete('/api/admin/users/:id', requireAdmin, async (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    if (userId === req.session.user.id) {
+      return res.status(400).json({ error: '不能删除自己' });
+    }
+    // 检查目标用户是否是管理员
+    const targetUser = await db.prepare('SELECT is_admin FROM users WHERE id = ?').get(userId);
+    if (targetUser && targetUser.is_admin) {
+      return res.status(400).json({ error: '不能删除管理员账号' });
+    }
+    // 删除用户相关数据
+    await db.prepare('DELETE FROM comments WHERE user_id = ?').run(userId);
+    await db.prepare('DELETE FROM accepts WHERE user_id = ?').run(userId);
+    await db.prepare('DELETE FROM tasks WHERE user_id = ?').run(userId);
+    await db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 删除任务
+router.delete('/api/admin/tasks/:id', requireAdmin, async (req, res) => {
+  try {
+    const taskId = Number(req.params.id);
+    await db.prepare('DELETE FROM comments WHERE task_id = ?').run(taskId);
+    await db.prepare('DELETE FROM accepts WHERE task_id = ?').run(taskId);
+    await db.prepare('DELETE FROM tasks WHERE id = ?').run(taskId);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 删除反馈
+router.delete('/api/admin/feedback/:id', requireAdmin, async (req, res) => {
+  try {
+    await db.prepare('DELETE FROM feedback WHERE id = ?').run(Number(req.params.id));
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

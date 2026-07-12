@@ -6,7 +6,8 @@ const API = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body)
-  }).then(r => r.json())
+  }).then(r => r.json()),
+  del: (url) => fetch(url, { method: 'DELETE' }).then(r => r.json())
 };
 
 // State
@@ -103,6 +104,7 @@ function renderPage(params) {
     case 'feedback': return renderFeedback();
     case 'feedback-list': return renderFeedbackList();
     case 'terms': return renderTerms();
+    case 'admin': return renderAdmin();
     default: return renderHome();
   }
 }
@@ -224,6 +226,8 @@ async function loadDetail(id) {
       ${currentUser ? `
         ${t.user_id === currentUser.id ? `
           <div style="color:var(--text-light); text-align:center; font-size:0.85rem; margin-top:8px;">这是你发布的任务</div>
+        ` : res.hasAccepted ? `
+          <div style="color:var(--success); text-align:center; font-size:0.85rem; margin-top:8px;">✅ 你已接单</div>
         ` : `
           <button class="btn btn-primary" style="margin-top:16px;" onclick="acceptTask(${t.id})">🤝 我来接单</button>
         `}
@@ -232,25 +236,35 @@ async function loadDetail(id) {
       `}
     </div>
 
-    <div class="comments-section">
-      <h3>💬 评论 (${res.comments.length})</h3>
-      ${res.comments.map(c => `
-        <div class="comment-item">
-          <span class="avatar">${c.avatar}</span>
-          <div class="c-body">
-            <div class="c-name">${c.username} <span class="c-time">· ${formatTime(c.created_at)}</span></div>
-            <div class="c-text">${escapeHTML(c.content)}</div>
+    ${res.canViewComments ? `
+      <div class="comments-section">
+        <h3>💬 留言 (${res.comments.length})</h3>
+        ${res.comments.map(c => `
+          <div class="comment-item">
+            <span class="avatar">${c.avatar}</span>
+            <div class="c-body">
+              <div class="c-name">${c.username} <span class="c-time">· ${formatTime(c.created_at)}</span></div>
+              <div class="c-text">${escapeHTML(c.content)}</div>
+            </div>
           </div>
+        `).join('') || '<p style="color:var(--text-lighter); font-size:0.85rem; padding:8px 0;">暂无留言，来说点什么吧</p>'}
+        
+        ${currentUser ? `
+          <div class="comment-form">
+            <input type="text" id="comment-input" placeholder="说点什么..." maxlength="200">
+            <button onclick="submitComment(${t.id})">发送</button>
+          </div>
+        ` : ''}
+      </div>
+    ` : `
+      <div class="comments-section">
+        <h3>💬 留言区</h3>
+        <div class="empty" style="padding:30px 20px;">
+          <div class="emoji">🔒</div>
+          <p style="font-size:0.85rem;">接单后才能查看和回复留言</p>
         </div>
-      `).join('') || '<p style="color:var(--text-lighter); font-size:0.85rem; padding:8px 0;">暂无评论，来说点什么吧</p>'}
-      
-      ${currentUser ? `
-        <div class="comment-form">
-          <input type="text" id="comment-input" placeholder="说点什么..." maxlength="200">
-          <button onclick="submitComment(${t.id})">发送</button>
-        </div>
-      ` : ''}
-    </div>
+      </div>
+    `}
   `;
 }
 
@@ -406,6 +420,9 @@ function renderProfile() {
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="navigate('my-accepts')">🤝 我接的任务</button>
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="navigate('feedback')">💬 意见反馈</button>
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="navigate('feedback-list')">📥 查看反馈</button>
+    ${currentUser.is_admin ? `
+      <button class="btn btn-primary" style="margin-bottom:12px;" onclick="navigate('admin')">⚙️ 管理后台</button>
+    ` : ''}
     <button class="btn btn-outline" style="margin-bottom:16px;" onclick="toggleEditProfile()">✏️ 编辑资料</button>
     <div id="edit-profile" style="display:none; margin-bottom:16px;">
       <div class="form-group">
@@ -614,6 +631,7 @@ function bindPageEvents() {
     case 'my-tasks': loadMyTasks(); break;
     case 'my-accepts': loadMyAccepts(); break;
     case 'feedback-list': loadFeedbackList(); break;
+    case 'admin': loadAdminUsers(); break;
   }
 }
 
@@ -765,6 +783,115 @@ function renderTerms() {
       </div>
     </div>
   `;
+}
+
+// ===== Admin 管理后台 =====
+function renderAdmin() {
+  if (!currentUser || !currentUser.is_admin) {
+    return `<div class="empty" style="padding-top:80px;"><div class="emoji">⛔</div><p>无管理员权限</p></div>`;
+  }
+  return `
+    <div class="detail-back" onclick="navigate('profile')">← 返回</div>
+    <h2 style="font-size:1.2rem; margin-bottom:6px;">⚙️ 管理后台</h2>
+    <p style="font-size:0.85rem; color:var(--text-light); margin-bottom:16px;">管理用户、任务和反馈</p>
+    <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminUsers()">👥 用户管理</button>
+    <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminTasks()">📋 任务管理</button>
+    <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminFeedback()">📥 反馈管理</button>
+    <div id="admin-content" style="margin-top:16px;"></div>
+  `;
+}
+
+async function loadAdminUsers() {
+  const res = await API.get('/api/admin/users');
+  const el = document.getElementById('admin-content');
+  if (!el) return;
+  if (res.error) { el.innerHTML = `<p style="color:var(--danger);">${res.error}</p>`; return; }
+  el.innerHTML = `
+    <h3 style="font-size:1rem; margin-bottom:12px;">👥 用户列表 (${res.users.length})</h3>
+    ${res.users.map(u => `
+      <div class="task-card" style="padding:12px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:1.5rem;">${u.avatar}</span>
+          <div style="flex:1;">
+            <div style="font-weight:600;">${escapeHTML(u.username)} ${u.is_admin ? '<span class="tag tag-reward" style="font-size:0.7rem;">管理员</span>' : ''}</div>
+            <div style="font-size:0.78rem; color:var(--text-light);">${u.points} 积分 · 发布 ${u.task_count} 任务 · ${formatTime(u.created_at)}</div>
+          </div>
+          ${!u.is_admin ? `<button class="btn btn-danger" style="width:auto; padding:6px 12px; font-size:0.78rem;" onclick="deleteUser(${u.id}, '${escapeHTML(u.username)}')">删除</button>` : ''}
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function deleteUser(id, name) {
+  if (!confirm(`确定删除用户「${name}」？此操作会删除其所有任务和评论，不可恢复。`)) return;
+  const res = await API.del(`/api/admin/users/${id}`);
+  if (res.error) { toast(res.error); return; }
+  toast('✅ 已删除用户');
+  loadAdminUsers();
+}
+
+async function loadAdminTasks() {
+  const res = await API.get('/api/tasks');
+  const el = document.getElementById('admin-content');
+  if (!el) return;
+  el.innerHTML = `
+    <h3 style="font-size:1rem; margin-bottom:12px;">📋 任务列表 (${res.tasks.length})</h3>
+    ${res.tasks.map(t => `
+      <div class="task-card" style="padding:12px;">
+        <div style="display:flex; align-items:flex-start; gap:10px;">
+          <div style="flex:1;">
+            <div style="font-weight:600; font-size:0.95rem;">${escapeHTML(t.title)}</div>
+            <div style="font-size:0.78rem; color:var(--text-light); margin-top:4px;">${t.username} · ${t.category} · ${t.difficulty}</div>
+          </div>
+          <button class="btn btn-danger" style="width:auto; padding:6px 12px; font-size:0.78rem;" onclick="deleteTask(${t.id})">删除</button>
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function deleteTask(id) {
+  if (!confirm('确定删除这个任务？相关评论和接单记录也会删除。')) return;
+  const res = await API.del(`/api/admin/tasks/${id}`);
+  if (res.error) { toast(res.error); return; }
+  toast('✅ 已删除任务');
+  loadAdminTasks();
+}
+
+async function loadAdminFeedback() {
+  const res = await API.get('/api/feedback');
+  const el = document.getElementById('admin-content');
+  if (!el) return;
+  if (!res.feedbacks || res.feedbacks.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="emoji">📭</div><p>暂无反馈</p></div>`;
+    return;
+  }
+  el.innerHTML = `
+    <h3 style="font-size:1rem; margin-bottom:12px;">📥 反馈列表 (${res.feedbacks.length})</h3>
+    ${res.feedbacks.map(f => `
+      <div class="task-card" style="padding:12px;">
+        <div style="display:flex; align-items:flex-start; gap:10px;">
+          <div style="flex:1;">
+            <div style="font-size:0.82rem; color:var(--text-light); margin-bottom:4px;">
+              <strong>${escapeHTML(f.username)}</strong> · ${formatTime(f.created_at)}
+              ${f.contact ? ` · 📞 ${escapeHTML(f.contact)}` : ''}
+            </div>
+            <div style="font-size:0.88rem; line-height:1.5;">${escapeHTML(f.content).replace(/\n/g, '<br>')}</div>
+          </div>
+          <button class="btn btn-danger" style="width:auto; padding:6px 12px; font-size:0.78rem;" onclick="deleteFeedback(${f.id})">删除</button>
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function deleteFeedback(id) {
+  if (!confirm('确定删除这条反馈？')) return;
+  const res = await API.del(`/api/admin/feedback/${id}`);
+  if (res.error) { toast(res.error); return; }
+  toast('✅ 已删除');
+  loadAdminFeedback();
 }
 
 // Init
