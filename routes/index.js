@@ -201,12 +201,12 @@ router.get('/api/tasks/:id', async (req, res) => {
 // 发布任务
 router.post('/api/tasks', requireLogin, async (req, res) => {
   try {
-    const { title, description, category, reward, difficulty } = req.body;
+    const { title, description, category, reward, difficulty, max_accepts } = req.body;
     if (!title || !description) {
       return res.status(400).json({ error: '标题和描述不能为空' });
     }
 
-    const result = await db.prepare(`INSERT INTO tasks (user_id, title, description, category, reward, difficulty) VALUES (?, ?, ?, ?, ?, ?)`).run(req.session.user.id, title, description, category || '其他', reward || '', difficulty || '简单');
+    const result = await db.prepare(`INSERT INTO tasks (user_id, title, description, category, reward, difficulty, max_accepts) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(req.session.user.id, title, description, category || '其他', reward || '', difficulty || '简单', max_accepts || 0);
 
     await db.prepare('UPDATE users SET points = points + 2 WHERE id = ?').run(req.session.user.id);
 
@@ -224,6 +224,9 @@ router.post('/api/tasks/:id/accept', requireLogin, async (req, res) => {
     if (!task) {
       return res.status(404).json({ error: '任务不存在' });
     }
+    if (task.status !== 'open') {
+      return res.status(400).json({ error: '任务已关闭，无法接单' });
+    }
     if (task.user_id === req.session.user.id) {
       return res.status(400).json({ error: '不能接自己发布的任务' });
     }
@@ -233,7 +236,24 @@ router.post('/api/tasks/:id/accept', requireLogin, async (req, res) => {
       return res.status(400).json({ error: '你已经接过这个任务了' });
     }
 
+    // 检查人数限制：max_accepts > 0 表示限制人数
+    if (task.max_accepts && task.max_accepts > 0) {
+      const countResult = await db.prepare('SELECT COUNT(*) as count FROM accepts WHERE task_id = ?').get(req.params.id);
+      if (countResult && countResult.count >= task.max_accepts) {
+        return res.status(400).json({ error: `名额已满（限 ${task.max_accepts} 人）` });
+      }
+    }
+
     await db.prepare('INSERT INTO accepts (task_id, user_id) VALUES (?, ?)').run(req.params.id, req.session.user.id);
+
+    // 如果设置了人数限制，接满后自动关闭任务
+    if (task.max_accepts && task.max_accepts > 0) {
+      const newCount = await db.prepare('SELECT COUNT(*) as count FROM accepts WHERE task_id = ?').get(req.params.id);
+      if (newCount && newCount.count >= task.max_accepts) {
+        await db.prepare('UPDATE tasks SET status = ? WHERE id = ?').run('closed', req.params.id);
+      }
+    }
+
     res.json({ ok: true });
   } catch (e) {
     console.error('Accept error:', e);

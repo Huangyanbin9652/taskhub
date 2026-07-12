@@ -151,6 +151,10 @@ async function loadTasks() {
 function taskCardHTML(t) {
   const diffMap = { '简单': 'easy', '中等': 'medium', '困难': 'hard' };
   const diffClass = diffMap[t.difficulty] || 'easy';
+  const isClosed = t.status === 'closed';
+  const maxAcceptsTag = t.max_accepts > 0 
+    ? `<span class="tag ${isClosed ? 'tag-difficulty-hard' : 'tag-difficulty-medium'}">${isClosed ? '🔒 已满' : `👤 限${t.max_accepts}人`}</span>`
+    : '';
   return `
     <div class="task-card" onclick="navigate('detail', {id: ${t.id}})">
       <div class="tc-header">
@@ -158,6 +162,7 @@ function taskCardHTML(t) {
           <span class="avatar">${t.avatar}</span>
           <span>${t.username}</span>
         </div>
+        ${isClosed ? '<span class="tag tag-difficulty-hard" style="font-size:0.7rem;">已关闭</span>' : ''}
       </div>
       <div class="tc-title">${escapeHTML(t.title)}</div>
       <div class="tc-desc">${escapeHTML(t.description)}</div>
@@ -165,6 +170,7 @@ function taskCardHTML(t) {
         <span class="tag tag-cat">${t.category}</span>
         <span class="tag tag-difficulty-${diffClass}">${t.difficulty}</span>
         ${t.reward ? `<span class="tag tag-reward">🎁 ${t.reward}</span>` : ''}
+        ${maxAcceptsTag}
       </div>
     </div>
   `;
@@ -221,16 +227,20 @@ async function loadDetail(id) {
         </div>
       </div>
       <div style="text-align:center; padding:8px 0 4px; font-size:0.8rem; color:var(--text-lighter);">
-        👥 ${res.acceptCount} 人已接单
+        👥 ${res.acceptCount} 人已接单${t.max_accepts > 0 ? ` / 限 ${t.max_accepts} 人` : '（不限制）'}
       </div>
       ${currentUser ? `
         ${t.user_id === currentUser.id ? `
           <div style="color:var(--text-light); text-align:center; font-size:0.85rem; margin-top:8px;">这是你发布的任务</div>
         ` : res.hasAccepted ? `
           <div style="color:var(--success); text-align:center; font-size:0.85rem; margin-top:8px;">✅ 你已接单</div>
+        ` : t.status === 'closed' ? `
+          <div style="color:var(--danger); text-align:center; font-size:0.85rem; margin-top:8px;">🔒 名额已满，无法接单</div>
         ` : `
           <button class="btn btn-primary" style="margin-top:16px;" onclick="acceptTask(${t.id})">🤝 我来接单</button>
         `}
+      ` : t.status === 'closed' ? `
+        <div style="color:var(--danger); text-align:center; font-size:0.85rem; margin-top:8px;">🔒 名额已满</div>
       ` : `
         <button class="btn btn-outline" style="margin-top:16px;" onclick="navigate('auth')">登录后接单</button>
       `}
@@ -335,15 +345,32 @@ function renderPublish() {
           `).join('')}
         </div>
       </div>
+      <div class="form-group">
+        <label>接单人数限制</label>
+        <div class="diff-selector">
+          <button class="selected" onclick="selectMaxAccepts(this, 0)">不限制</button>
+          <button onclick="selectMaxAccepts(this, 1)">仅1人</button>
+          <button onclick="selectMaxAccepts(this, 3)">限3人</button>
+          <button onclick="selectMaxAccepts(this, 5)">限5人</button>
+        </div>
+        <p style="font-size:0.78rem; color:var(--text-lighter); margin-top:6px;">限制人数后，名额满将自动关闭任务</p>
+      </div>
       <button class="btn btn-primary" onclick="publishTask()">🚀 发布任务</button>
     </div>
   `;
 }
 
 let selectedDifficulty = '简单';
+let selectedMaxAccepts = 0;
 
 function selectDiff(btn, diff) {
   selectedDifficulty = diff;
+  btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+}
+
+function selectMaxAccepts(btn, max) {
+  selectedMaxAccepts = max;
   btn.parentElement.querySelectorAll('button').forEach(b => b.classList.remove('selected'));
   btn.classList.add('selected');
 }
@@ -359,7 +386,7 @@ async function publishTask() {
     return;
   }
 
-  const res = await API.post('/api/tasks', { title, description: desc, category, reward, difficulty: selectedDifficulty });
+  const res = await API.post('/api/tasks', { title, description: desc, category, reward, difficulty: selectedDifficulty, max_accepts: selectedMaxAccepts });
   if (res.error) {
     toast(res.error);
   } else {

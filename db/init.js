@@ -74,10 +74,18 @@ async function initDB() {
       difficulty TEXT DEFAULT '简单',
       status TEXT DEFAULT 'open',
       image TEXT DEFAULT '',
+      max_accepts INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
+  
+  // 尝试给已有表加 max_accepts 字段
+  try {
+    await client.execute(`ALTER TABLE tasks ADD COLUMN max_accepts INTEGER DEFAULT 0`);
+  } catch (e) {
+    // 字段已存在，忽略
+  }
   
   await client.execute(`
     CREATE TABLE IF NOT EXISTS accepts (
