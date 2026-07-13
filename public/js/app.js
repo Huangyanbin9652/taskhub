@@ -609,13 +609,13 @@ async function doAuth() {
     errEl.textContent = res.error;
   } else {
     currentUser = res.user;
-    if (authMode === 'login' && res.welcome) {
-      showWelcome(res.welcome, res.user);
-    } else {
-      toast('🎉 注册成功，欢迎加入！');
-    }
     navigate('home');
     setTimeout(() => loadTasks(), 100);
+    if (authMode === 'login' && res.welcome) {
+      setTimeout(() => showWelcome(res.welcome, res.user), 300);
+    } else {
+      setTimeout(() => toast('🎉 注册成功，欢迎加入！'), 200);
+    }
   }
 }
 
@@ -954,31 +954,55 @@ async function loadAdminLoginStats() {
   if (res.error) { el.innerHTML = `<p style="color:var(--danger);">${res.error}</p>`; return; }
 
   el.innerHTML = `
-    <div style="display:flex; gap:12px; margin-bottom:16px;">
-      <div style="flex:1; background:var(--card-bg); border-radius:var(--radius); padding:16px; text-align:center; box-shadow:var(--shadow);">
-        <div style="font-size:1.8rem; font-weight:800; color:var(--primary);">${res.total_count || 0}</div>
-        <div style="font-size:0.78rem; color:var(--text-light);">总登录次数</div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:10px; margin-bottom:20px;">
+      <div style="background:var(--card-bg); border-radius:var(--radius); padding:14px 10px; text-align:center; box-shadow:var(--shadow);">
+        <div style="font-size:1.6rem; font-weight:800; color:var(--primary);">${res.total_count || 0}</div>
+        <div style="font-size:0.72rem; color:var(--text-light);">总访问次数</div>
       </div>
-      <div style="flex:1; background:var(--card-bg); border-radius:var(--radius); padding:16px; text-align:center; box-shadow:var(--shadow);">
-        <div style="font-size:1.8rem; font-weight:800; color:var(--accent);">${res.today_count || 0}</div>
-        <div style="font-size:0.78rem; color:var(--text-light);">今日登录</div>
+      <div style="background:var(--card-bg); border-radius:var(--radius); padding:14px 10px; text-align:center; box-shadow:var(--shadow);">
+        <div style="font-size:1.6rem; font-weight:800; color:var(--accent);">${res.today_count || 0}</div>
+        <div style="font-size:0.72rem; color:var(--text-light);">今日访问</div>
+      </div>
+      <div style="background:var(--card-bg); border-radius:var(--radius); padding:14px 10px; text-align:center; box-shadow:var(--shadow);">
+        <div style="font-size:1.6rem; font-weight:800; color:#f59e0b;">${res.today_guests || 0}</div>
+        <div style="font-size:0.72rem; color:var(--text-light);">今日游客</div>
+      </div>
+      <div style="background:var(--card-bg); border-radius:var(--radius); padding:14px 10px; text-align:center; box-shadow:var(--shadow);">
+        <div style="font-size:1.6rem; font-weight:800; color:#10b981;">${res.today_users || 0}</div>
+        <div style="font-size:0.72rem; color:var(--text-light);">今日登录用户</div>
+      </div>
+      <div style="background:var(--card-bg); border-radius:var(--radius); padding:14px 10px; text-align:center; box-shadow:var(--shadow);">
+        <div style="font-size:1.6rem; font-weight:800; color:#8b5cf6;">${res.unique_ips || 0}</div>
+        <div style="font-size:0.72rem; color:var(--text-light);">独立 IP 数</div>
       </div>
     </div>
     <h3 style="font-size:1rem; margin-bottom:12px;">📊 用户登录排行</h3>
-    ${res.users.map(u => `
-      <div class="task-card" style="padding:12px;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span style="font-size:1.5rem;">${u.avatar}</span>
-          <div style="flex:1;">
-            <div style="font-weight:600;">${escapeHTML(u.username)} ${u.is_admin ? '<span class="tag tag-reward" style="font-size:0.7rem;">管理员</span>' : ''}</div>
-            <div style="font-size:0.78rem; color:var(--text-light);">
-              登录 ${u.login_count || 0} 次 · 上次: ${u.last_login_at ? formatTime(u.last_login_at) : '从未登录'}
-            </div>
-          </div>
-          <span style="font-weight:700; color:var(--primary);">${u.login_count || 0}</span>
-        </div>
-      </div>
-    `).join('')}
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>序号</th>
+            <th>用户</th>
+            <th>登录次数</th>
+            <th>上次登录</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${res.users.map((u, i) => `
+            <tr>
+              <td style="text-align:center;">${i + 1}</td>
+              <td>
+                <span style="font-size:1.1rem;">${u.avatar}</span>
+                ${escapeHTML(u.username)}
+                ${u.is_admin ? '<span class="tag tag-reward" style="font-size:0.65rem; margin-left:4px;">管理员</span>' : ''}
+              </td>
+              <td style="text-align:center; font-weight:700; color:var(--primary);">${u.login_count || 0}</td>
+              <td style="font-size:0.8rem; color:var(--text-light);">${u.last_login_at ? formatTime(u.last_login_at) : '从未登录'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
@@ -993,20 +1017,41 @@ async function loadAdminLoginLogs() {
   }
 
   el.innerHTML = `
-    <h3 style="font-size:1rem; margin-bottom:12px;">📝 登录日志（最近 200 条）</h3>
-    ${res.logs.map(l => `
-      <div class="task-card" style="padding:10px 12px;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span style="font-size:1.3rem;">${l.avatar || '👤'}</span>
-          <div style="flex:1;">
-            <div style="font-weight:600; font-size:0.88rem;">${escapeHTML(l.username)}</div>
-            <div style="font-size:0.74rem; color:var(--text-light); margin-top:2px;">
-              🌐 ${escapeHTML(l.ip || '未知')} · ${formatTime(l.login_time)}
-            </div>
-          </div>
-        </div>
-      </div>
-    `).join('')}
+    <h3 style="font-size:1rem; margin-bottom:12px;">📝 登录日志（最近 ${res.logs.length} 条）</h3>
+    <div class="table-wrap">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>序号</th>
+            <th>登录时间</th>
+            <th>账号</th>
+            <th>IP 地址</th>
+            <th>设备</th>
+            <th>类型</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${res.logs.map((l, i) => `
+            <tr>
+              <td style="text-align:center; color:var(--text-light);">${i + 1}</td>
+              <td style="font-size:0.8rem; white-space:nowrap;">${formatTime(l.login_time)}</td>
+              <td>
+                ${l.username === '游客'
+                  ? '<span style="color:var(--text-light);">👥 游客</span>'
+                  : `<span style="font-weight:600;">${escapeHTML(l.username)}</span>`}
+              </td>
+              <td style="font-size:0.8rem; font-family:monospace;">${escapeHTML(l.ip || '未知')}</td>
+              <td style="font-size:0.8rem;">${l.device || '未知'}</td>
+              <td style="text-align:center;">
+                ${l.visit_type === 'login'
+                  ? '<span class="tag tag-reward" style="font-size:0.65rem;">登录</span>'
+                  : '<span class="tag" style="font-size:0.65rem; background:#e5e7eb; color:#6b7280;">访问</span>'}
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 

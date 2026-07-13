@@ -34,9 +34,41 @@ async function ensureDB(req, res, next) {
   }
 }
 
+// 全局中间件：初始化数据库 + 记录访客访问
 router.use(async (req, res, next) => {
   try {
     await initDB();
+    
+    // 只记录页面访问，排除静态资源和频繁的 API 轮询
+    if (!req.path.match(/\.(css|js|png|jpg|ico|svg|woff)$/) 
+        && req.path !== '/api/me'
+        && !req.path.startsWith('/api/tasks')) {
+      try {
+        const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() 
+                 || req.headers['x-real-ip'] 
+                 || req.connection?.remoteAddress 
+                 || req.socket?.remoteAddress 
+                 || '';
+        const ua = req.headers['user-agent'] || '';
+        const userId = req.session?.user?.id || null;
+        const username = req.session?.user?.username || '游客';
+        const visitType = req.session?.user ? 'login' : 'visit';
+        
+        // 游客：同一 IP 5 分钟内只记一次，避免刷日志
+        if (!userId) {
+          const recent = await db.prepare(`SELECT id FROM login_logs WHERE ip = ? AND username = '游客' AND login_time > datetime('now', '-5 minutes') LIMIT 1`).get(ip);
+          if (recent) {
+            next();
+            return;
+          }
+        }
+        
+        await db.prepare('INSERT INTO login_logs (user_id, username, ip, user_agent, visit_type) VALUES (?, ?, ?, ?, ?)').run(userId, username, ip, ua, visitType);
+      } catch (logErr) {
+        // 记录日志失败不影响正常请求
+      }
+    }
+    
     next();
   } catch (e) {
     console.error('DB init error:', e.message);
@@ -460,17 +492,28 @@ router.delete('/api/admin/feedback/:id', requireAdmin, async (req, res) => {
   }
 });
 
-// 获取登录日志（管理员）
+// 获取访问日志（管理员）- 表格形式
 router.get('/api/admin/login-logs', requireAdmin, async (req, res) => {
   try {
     const logs = await db.prepare(`
-      SELECT l.*, u.avatar 
-      FROM login_logs l 
-      LEFT JOIN users u ON l.user_id = u.id 
-      ORDER BY l.id DESC 
-      LIMIT 200
+      SELECT id, user_id, username, ip, user_agent, login_time, visit_type
+      FROM login_logs 
+      ORDER BY id DESC 
+      LIMIT 500
     `).all();
-    res.json({ logs });
+
+    // 解析设备类型
+    const logsParsed = logs.map(l => {
+      let device = '未知';
+      const ua = l.user_agent || '';
+      if (/mobile|android|iphone|ipad/i.test(ua)) device = '手机';
+      else if (/windows/i.test(ua)) device = 'Windows';
+      else if (/mac/i.test(ua)) device = 'Mac';
+      else if (/linux/i.test(ua)) device = 'Linux';
+      return { ...l, device };
+    });
+
+    res.json({ logs: logsParsed });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -484,19 +527,37 @@ router.get('/api/admin/login-stats', requireAdmin, async (req, res) => {
       FROM users ORDER BY login_count DESC
     `).all();
     
-    // 今日登录数
+    // 今日访问数（含游客）
     const todayLogs = await db.prepare(`
       SELECT COUNT(*) as count FROM login_logs 
       WHERE date(login_time) = date('now')
     `).get();
     
-    // 总登录次数
+    // 总访问次数
     const totalLogs = await db.prepare('SELECT COUNT(*) as count FROM login_logs').get();
+
+    // 今日游客数
+    const todayGuests = await db.prepare(`
+      SELECT COUNT(*) as count FROM login_logs 
+      WHERE username = '游客' AND date(login_time) = date('now')
+    `).get();
+
+    // 今日登录用户数
+    const todayUsers = await db.prepare(`
+      SELECT COUNT(*) as count FROM login_logs 
+      WHERE username != '游客' AND date(login_time) = date('now')
+    `).get();
+
+    // 独立 IP 数
+    const uniqueIPs = await db.prepare('SELECT COUNT(DISTINCT ip) as count FROM login_logs WHERE ip != ""').get();
     
     res.json({ 
       users, 
       today_count: todayLogs ? todayLogs.count : 0,
-      total_count: totalLogs ? totalLogs.count : 0
+      total_count: totalLogs ? totalLogs.count : 0,
+      today_guests: todayGuests ? todayGuests.count : 0,
+      today_users: todayUsers ? todayUsers.count : 0,
+      unique_ips: uniqueIPs ? uniqueIPs.count : 0
     });
   } catch (e) {
     res.status(500).json({ error: e.message });

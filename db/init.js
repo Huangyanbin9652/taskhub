@@ -129,7 +129,8 @@ async function initDB() {
       username TEXT DEFAULT '',
       ip TEXT DEFAULT '',
       user_agent TEXT DEFAULT '',
-      login_time DATETIME DEFAULT CURRENT_TIMESTAMP
+      login_time DATETIME DEFAULT CURRENT_TIMESTAMP,
+      visit_type TEXT DEFAULT 'visit'
     )
   `);
   
