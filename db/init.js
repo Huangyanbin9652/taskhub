@@ -170,11 +170,31 @@ async function initDB() {
     await seedDB(client);
   }
   
-  // 设置 huangyanbin 为管理员
+  // 设置 huangyanbin 为管理员 + 补偿调试期间损失的积分
   await client.execute({
     sql: 'UPDATE users SET is_admin = 1 WHERE username = ?',
     args: ['huangyanbin']
   });
+  // 一次性补偿 50 积分（用 points_compensated 标记避免重复加）
+  try {
+    const compensated = await client.execute({
+      sql: "SELECT value FROM feedback WHERE username = '__system__' AND content = 'points_compensated_50'",
+      args: []
+    });
+    if (compensated.rows.length === 0) {
+      await client.execute({
+        sql: "UPDATE users SET points = points + 50 WHERE username = 'huangyanbin'",
+        args: []
+      });
+      await client.execute({
+        sql: "INSERT INTO feedback (username, content) VALUES ('__system__', 'points_compensated_50')",
+        args: []
+      });
+      console.log('Compensated 50 points to huangyanbin');
+    }
+  } catch (e) {
+    console.error('Points compensation error:', e.message);
+  }
 }
 
 async function seedDB(client) {
