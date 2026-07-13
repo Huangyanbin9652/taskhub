@@ -464,7 +464,7 @@ function renderProfile() {
       </div>
       <button class="btn btn-primary" onclick="saveProfile()">保存</button>
     </div>
-    <button class="btn btn-danger" id="logout-btn">退出登录</button>
+    <a href="/api/logout" class="btn btn-danger" style="display:block; text-decoration:none;">退出登录</a>
   `;
 }
 
@@ -686,13 +686,7 @@ function bindPageEvents() {
       break;
     case 'leaderboard': loadLeaderboard(); break;
     case 'profile': 
-      if (currentUser) {
-        loadProfileStats();
-        const logoutBtn = document.getElementById('logout-btn');
-        if (logoutBtn) {
-          logoutBtn.onclick = (e) => { e.preventDefault(); logout(); };
-        }
-      }
+      if (currentUser) loadProfileStats();
       break;
     case 'my-tasks': loadMyTasks(); break;
     case 'my-accepts': loadMyAccepts(); break;
@@ -863,7 +857,6 @@ function renderAdmin() {
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminUsers()">👥 用户管理</button>
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminTasks()">📋 任务管理</button>
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminFeedback()">📥 反馈管理</button>
-    <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminLoginStats()">📊 登录统计</button>
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminLoginLogs()">📝 登录日志</button>
     <div id="admin-content" style="margin-top:16px;"></div>
   `;
@@ -962,66 +955,7 @@ async function deleteFeedback(id) {
   loadAdminFeedback();
 }
 
-// ===== 登录统计与日志 =====
-async function loadAdminLoginStats() {
-  const res = await API.get('/api/admin/login-stats');
-  const el = document.getElementById('admin-content');
-  if (!el) return;
-  if (res.error) { el.innerHTML = `<p style="color:var(--danger);">${res.error}</p>`; return; }
-
-  el.innerHTML = `
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(110px, 1fr)); gap:10px; margin-bottom:20px;">
-      <div style="background:var(--card-bg); border-radius:var(--radius); padding:14px 10px; text-align:center; box-shadow:var(--shadow);">
-        <div style="font-size:1.6rem; font-weight:800; color:var(--primary);">${res.total_count || 0}</div>
-        <div style="font-size:0.72rem; color:var(--text-light);">总访问次数</div>
-      </div>
-      <div style="background:var(--card-bg); border-radius:var(--radius); padding:14px 10px; text-align:center; box-shadow:var(--shadow);">
-        <div style="font-size:1.6rem; font-weight:800; color:var(--accent);">${res.today_count || 0}</div>
-        <div style="font-size:0.72rem; color:var(--text-light);">今日访问</div>
-      </div>
-      <div style="background:var(--card-bg); border-radius:var(--radius); padding:14px 10px; text-align:center; box-shadow:var(--shadow);">
-        <div style="font-size:1.6rem; font-weight:800; color:#f59e0b;">${res.today_guests || 0}</div>
-        <div style="font-size:0.72rem; color:var(--text-light);">今日游客</div>
-      </div>
-      <div style="background:var(--card-bg); border-radius:var(--radius); padding:14px 10px; text-align:center; box-shadow:var(--shadow);">
-        <div style="font-size:1.6rem; font-weight:800; color:#10b981;">${res.today_users || 0}</div>
-        <div style="font-size:0.72rem; color:var(--text-light);">今日登录用户</div>
-      </div>
-      <div style="background:var(--card-bg); border-radius:var(--radius); padding:14px 10px; text-align:center; box-shadow:var(--shadow);">
-        <div style="font-size:1.6rem; font-weight:800; color:#8b5cf6;">${res.unique_ips || 0}</div>
-        <div style="font-size:0.72rem; color:var(--text-light);">独立 IP 数</div>
-      </div>
-    </div>
-    <h3 style="font-size:1rem; margin-bottom:12px;">📊 用户登录排行</h3>
-    <div class="table-wrap">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>序号</th>
-            <th>用户</th>
-            <th>登录次数</th>
-            <th>上次登录</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${res.users.map((u, i) => `
-            <tr>
-              <td style="text-align:center;">${i + 1}</td>
-              <td>
-                <span style="font-size:1.1rem;">${u.avatar}</span>
-                ${escapeHTML(u.username)}
-                ${u.is_admin ? '<span class="tag tag-reward" style="font-size:0.65rem; margin-left:4px;">管理员</span>' : ''}
-              </td>
-              <td style="text-align:center; font-weight:700; color:var(--primary);">${u.login_count || 0}</td>
-              <td style="font-size:0.8rem; color:var(--text-light);">${u.last_login_at ? formatTime(u.last_login_at) : '从未登录'}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-    </div>
-  `;
-}
-
+// ===== 登录日志 =====
 async function loadAdminLoginLogs() {
   const res = await API.get('/api/admin/login-logs');
   const el = document.getElementById('admin-content');

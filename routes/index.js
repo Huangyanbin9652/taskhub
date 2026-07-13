@@ -150,10 +150,18 @@ router.post('/api/login', async (req, res) => {
   }
 });
 
-// 登出
+// 登出 - POST 方式（前端 fetch 调用）
 router.post('/api/logout', (req, res) => {
-  req.session.destroy();
+  // cookie-session 没有 destroy()，直接置 null 清除 cookie
+  req.session = null;
   res.json({ ok: true });
+});
+
+// 登出 - GET 方式（直接用 a 标签跳转，最可靠，不依赖 JS）
+router.get('/api/logout', (req, res) => {
+  req.session = null;
+  // 重定向到首页
+  res.redirect('/');
 });
 
 // 获取当前用户
@@ -514,51 +522,6 @@ router.get('/api/admin/login-logs', requireAdmin, async (req, res) => {
     });
 
     res.json({ logs: logsParsed });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
-// 获取用户登录统计（管理员）
-router.get('/api/admin/login-stats', requireAdmin, async (req, res) => {
-  try {
-    const users = await db.prepare(`
-      SELECT id, username, avatar, login_count, last_login_at, is_admin, created_at
-      FROM users ORDER BY login_count DESC
-    `).all();
-    
-    // 今日访问数（含游客）
-    const todayLogs = await db.prepare(`
-      SELECT COUNT(*) as count FROM login_logs 
-      WHERE date(login_time) = date('now')
-    `).get();
-    
-    // 总访问次数
-    const totalLogs = await db.prepare('SELECT COUNT(*) as count FROM login_logs').get();
-
-    // 今日游客数
-    const todayGuests = await db.prepare(`
-      SELECT COUNT(*) as count FROM login_logs 
-      WHERE username = '游客' AND date(login_time) = date('now')
-    `).get();
-
-    // 今日登录用户数
-    const todayUsers = await db.prepare(`
-      SELECT COUNT(*) as count FROM login_logs 
-      WHERE username != '游客' AND date(login_time) = date('now')
-    `).get();
-
-    // 独立 IP 数
-    const uniqueIPs = await db.prepare('SELECT COUNT(DISTINCT ip) as count FROM login_logs WHERE ip != ""').get();
-    
-    res.json({ 
-      users, 
-      today_count: todayLogs ? todayLogs.count : 0,
-      total_count: totalLogs ? totalLogs.count : 0,
-      today_guests: todayGuests ? todayGuests.count : 0,
-      today_users: todayUsers ? todayUsers.count : 0,
-      unique_ips: uniqueIPs ? uniqueIPs.count : 0
-    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
