@@ -609,10 +609,33 @@ async function doAuth() {
     errEl.textContent = res.error;
   } else {
     currentUser = res.user;
-    toast(authMode === 'login' ? '👋 登录成功' : '🎉 注册成功');
+    if (authMode === 'login' && res.welcome) {
+      showWelcome(res.welcome, res.user);
+    } else {
+      toast('🎉 注册成功，欢迎加入！');
+    }
     navigate('home');
     setTimeout(() => loadTasks(), 100);
   }
+}
+
+// 欢迎弹窗
+function showWelcome(msg, user) {
+  const old = document.querySelector('.welcome-modal');
+  if (old) old.remove();
+  const modal = document.createElement('div');
+  modal.className = 'welcome-modal';
+  modal.innerHTML = `
+    <div class="welcome-overlay" onclick="this.parentElement.remove()"></div>
+    <div class="welcome-box">
+      <div class="welcome-avatar">${user.avatar || '👋'}</div>
+      <p class="welcome-text">${escapeHTML(msg)}</p>
+      <button class="btn btn-primary" style="max-width:160px; margin:0 auto;" onclick="this.closest('.welcome-modal').remove()">开始探索</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  // 5秒后自动消失
+  setTimeout(() => { if (modal.parentElement) modal.remove(); }, 5000);
 }
 
 async function logout() {
@@ -824,6 +847,8 @@ function renderAdmin() {
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminUsers()">👥 用户管理</button>
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminTasks()">📋 任务管理</button>
     <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminFeedback()">📥 反馈管理</button>
+    <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminLoginStats()">📊 登录统计</button>
+    <button class="btn btn-outline" style="margin-bottom:12px;" onclick="loadAdminLoginLogs()">📝 登录日志</button>
     <div id="admin-content" style="margin-top:16px;"></div>
   `;
 }
@@ -919,6 +944,70 @@ async function deleteFeedback(id) {
   if (res.error) { toast(res.error); return; }
   toast('✅ 已删除');
   loadAdminFeedback();
+}
+
+// ===== 登录统计与日志 =====
+async function loadAdminLoginStats() {
+  const res = await API.get('/api/admin/login-stats');
+  const el = document.getElementById('admin-content');
+  if (!el) return;
+  if (res.error) { el.innerHTML = `<p style="color:var(--danger);">${res.error}</p>`; return; }
+
+  el.innerHTML = `
+    <div style="display:flex; gap:12px; margin-bottom:16px;">
+      <div style="flex:1; background:var(--card-bg); border-radius:var(--radius); padding:16px; text-align:center; box-shadow:var(--shadow);">
+        <div style="font-size:1.8rem; font-weight:800; color:var(--primary);">${res.total_count || 0}</div>
+        <div style="font-size:0.78rem; color:var(--text-light);">总登录次数</div>
+      </div>
+      <div style="flex:1; background:var(--card-bg); border-radius:var(--radius); padding:16px; text-align:center; box-shadow:var(--shadow);">
+        <div style="font-size:1.8rem; font-weight:800; color:var(--accent);">${res.today_count || 0}</div>
+        <div style="font-size:0.78rem; color:var(--text-light);">今日登录</div>
+      </div>
+    </div>
+    <h3 style="font-size:1rem; margin-bottom:12px;">📊 用户登录排行</h3>
+    ${res.users.map(u => `
+      <div class="task-card" style="padding:12px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:1.5rem;">${u.avatar}</span>
+          <div style="flex:1;">
+            <div style="font-weight:600;">${escapeHTML(u.username)} ${u.is_admin ? '<span class="tag tag-reward" style="font-size:0.7rem;">管理员</span>' : ''}</div>
+            <div style="font-size:0.78rem; color:var(--text-light);">
+              登录 ${u.login_count || 0} 次 · 上次: ${u.last_login_at ? formatTime(u.last_login_at) : '从未登录'}
+            </div>
+          </div>
+          <span style="font-weight:700; color:var(--primary);">${u.login_count || 0}</span>
+        </div>
+      </div>
+    `).join('')}
+  `;
+}
+
+async function loadAdminLoginLogs() {
+  const res = await API.get('/api/admin/login-logs');
+  const el = document.getElementById('admin-content');
+  if (!el) return;
+  if (res.error) { el.innerHTML = `<p style="color:var(--danger);">${res.error}</p>`; return; }
+  if (!res.logs || res.logs.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="emoji">📭</div><p>暂无登录记录</p></div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <h3 style="font-size:1rem; margin-bottom:12px;">📝 登录日志（最近 200 条）</h3>
+    ${res.logs.map(l => `
+      <div class="task-card" style="padding:10px 12px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:1.3rem;">${l.avatar || '👤'}</span>
+          <div style="flex:1;">
+            <div style="font-weight:600; font-size:0.88rem;">${escapeHTML(l.username)}</div>
+            <div style="font-size:0.74rem; color:var(--text-light); margin-top:2px;">
+              🌐 ${escapeHTML(l.ip || '未知')} · ${formatTime(l.login_time)}
+            </div>
+          </div>
+        </div>
+      </div>
+    `).join('')}
+  `;
 }
 
 // Init

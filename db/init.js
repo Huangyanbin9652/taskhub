@@ -122,6 +122,25 @@ async function initDB() {
     )
   `);
   
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS login_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      username TEXT DEFAULT '',
+      ip TEXT DEFAULT '',
+      user_agent TEXT DEFAULT '',
+      login_time DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  
+  // 尝试给 users 表加 login_count 字段
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN login_count INTEGER DEFAULT 0`);
+  } catch (e) { /* 字段已存在 */ }
+  try {
+    await client.execute(`ALTER TABLE users ADD COLUMN last_login_at TEXT DEFAULT ''`);
+  } catch (e) { /* 字段已存在 */ }
+  
   // 插入示例数据
   const countResult = await client.execute('SELECT COUNT(*) as count FROM users');
   if (countResult.rows[0].count === 0) {

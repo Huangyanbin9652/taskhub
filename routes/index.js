@@ -91,8 +91,27 @@ router.post('/api/login', async (req, res) => {
       return res.status(400).json({ error: '用户名或密码错误' });
     }
 
-    req.session.user = { id: user.id, username: user.username, avatar: user.avatar, points: user.points, is_admin: !!user.is_admin };
-    res.json({ ok: true, user: req.session.user });
+    // 获取 IP 地址（支持代理转发）
+    const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() 
+             || req.headers['x-real-ip'] 
+             || req.connection?.remoteAddress 
+             || req.socket?.remoteAddress 
+             || '';
+    const userAgent = req.headers['user-agent'] || '';
+
+    // 更新登录次数
+    const newCount = (user.login_count || 0) + 1;
+    await db.prepare('UPDATE users SET login_count = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(newCount, user.id);
+
+    // 记录登录日志
+    await db.prepare('INSERT INTO login_logs (user_id, username, ip, user_agent) VALUES (?, ?, ?, ?)').run(user.id, user.username, ip, userAgent);
+
+    req.session.user = { id: user.id, username: user.username, avatar: user.avatar, points: user.points, is_admin: !!user.is_admin, login_count: newCount };
+
+    // 生成欢迎信息
+    const welcome = `${user.username}，欢迎你第 ${newCount} 次登录，祝您玩的开心！🎉`;
+
+    res.json({ ok: true, user: req.session.user, welcome, login_count: newCount });
   } catch (e) {
     console.error('Login error:', e);
     res.status(500).json({ error: '登录失败: ' + e.message });
@@ -436,6 +455,49 @@ router.delete('/api/admin/feedback/:id', requireAdmin, async (req, res) => {
   try {
     await db.prepare('DELETE FROM feedback WHERE id = ?').run(Number(req.params.id));
     res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 获取登录日志（管理员）
+router.get('/api/admin/login-logs', requireAdmin, async (req, res) => {
+  try {
+    const logs = await db.prepare(`
+      SELECT l.*, u.avatar 
+      FROM login_logs l 
+      LEFT JOIN users u ON l.user_id = u.id 
+      ORDER BY l.id DESC 
+      LIMIT 200
+    `).all();
+    res.json({ logs });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 获取用户登录统计（管理员）
+router.get('/api/admin/login-stats', requireAdmin, async (req, res) => {
+  try {
+    const users = await db.prepare(`
+      SELECT id, username, avatar, login_count, last_login_at, is_admin, created_at
+      FROM users ORDER BY login_count DESC
+    `).all();
+    
+    // 今日登录数
+    const todayLogs = await db.prepare(`
+      SELECT COUNT(*) as count FROM login_logs 
+      WHERE date(login_time) = date('now')
+    `).get();
+    
+    // 总登录次数
+    const totalLogs = await db.prepare('SELECT COUNT(*) as count FROM login_logs').get();
+    
+    res.json({ 
+      users, 
+      today_count: todayLogs ? todayLogs.count : 0,
+      total_count: totalLogs ? totalLogs.count : 0
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
