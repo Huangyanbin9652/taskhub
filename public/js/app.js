@@ -464,7 +464,7 @@ function renderProfile() {
       </div>
       <button class="btn btn-primary" onclick="saveProfile()">保存</button>
     </div>
-    <button class="btn btn-danger" onclick="logout()">退出登录</button>
+    <button class="btn btn-danger" id="logout-btn">退出登录</button>
   `;
 }
 
@@ -642,6 +642,7 @@ function showWelcome(msg, user) {
 }
 
 async function logout() {
+  if (!confirm('确定要退出登录吗？')) return;
   try {
     // 微信内置浏览器可能拦截 cookie，先清本地再调接口
     document.cookie = 'taskhub_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
@@ -651,9 +652,8 @@ async function logout() {
     console.error('Logout error:', e);
   }
   currentUser = null;
-  toast('已退出登录');
-  // 强制刷新页面，确保微信内置浏览器也干净退出
-  window.location.href = '/';
+  // 强制刷新页面，带随机参数确保微信不缓存
+  window.location.href = '/?_=' + Date.now();
 }
 
 // ===== Utils =====
@@ -686,7 +686,13 @@ function bindPageEvents() {
       break;
     case 'leaderboard': loadLeaderboard(); break;
     case 'profile': 
-      if (currentUser) loadProfileStats();
+      if (currentUser) {
+        loadProfileStats();
+        const logoutBtn = document.getElementById('logout-btn');
+        if (logoutBtn) {
+          logoutBtn.onclick = (e) => { e.preventDefault(); logout(); };
+        }
+      }
       break;
     case 'my-tasks': loadMyTasks(); break;
     case 'my-accepts': loadMyAccepts(); break;

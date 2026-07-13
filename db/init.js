@@ -56,13 +56,6 @@ async function initDB() {
     )
   `);
   
-  // 尝试给已有表加 is_admin 字段（如果不存在）
-  try {
-    await client.execute(`ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0`);
-  } catch (e) {
-    // 字段已存在，忽略
-  }
-  
   await client.execute(`
     CREATE TABLE IF NOT EXISTS tasks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,13 +72,6 @@ async function initDB() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     )
   `);
-  
-  // 尝试给已有表加 max_accepts 字段
-  try {
-    await client.execute(`ALTER TABLE tasks ADD COLUMN max_accepts INTEGER DEFAULT 0`);
-  } catch (e) {
-    // 字段已存在，忽略
-  }
   
   await client.execute(`
     CREATE TABLE IF NOT EXISTS accepts (
@@ -111,6 +97,7 @@ async function initDB() {
     )
   `);
   
+  // 创建反馈表
   await client.execute(`
     CREATE TABLE IF NOT EXISTS feedback (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,6 +109,7 @@ async function initDB() {
     )
   `);
   
+  // 创建登录日志表
   await client.execute(`
     CREATE TABLE IF NOT EXISTS login_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -134,18 +122,47 @@ async function initDB() {
     )
   `);
   
-  // 尝试给已有 login_logs 表加 visit_type 字段
-  try {
-    await client.execute(`ALTER TABLE login_logs ADD COLUMN visit_type TEXT DEFAULT 'visit'`);
-  } catch (e) { /* 字段已存在或表不存在 */ }
+  // 辅助函数：确保表中存在某字段
+  async function ensureColumn(table, column, type) {
+    try {
+      const info = await client.execute(`PRAGMA table_info(${table})`);
+      const exists = info.rows.some(r => r.name === column);
+      if (!exists) {
+        await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+        console.log(`Added column ${column} to ${table}`);
+      }
+    } catch (e) {
+      console.error(`Ensure column ${table}.${column} error:`, e.message);
+    }
+  }
   
-  // 尝试给 users 表加 login_count 字段
-  try {
-    await client.execute(`ALTER TABLE users ADD COLUMN login_count INTEGER DEFAULT 0`);
-  } catch (e) { /* 字段已存在 */ }
-  try {
-    await client.execute(`ALTER TABLE users ADD COLUMN last_login_at TEXT DEFAULT ''`);
-  } catch (e) { /* 字段已存在 */ }
+  // 确保所有历史字段都存在
+  await ensureColumn('users', 'is_admin', 'INTEGER DEFAULT 0');
+  await ensureColumn('users', 'login_count', 'INTEGER DEFAULT 0');
+  await ensureColumn('users', 'last_login_at', 'TEXT DEFAULT \'\'');
+  await ensureColumn('tasks', 'max_accepts', 'INTEGER DEFAULT 0');
+  await ensureColumn('login_logs', 'visit_type', 'TEXT DEFAULT \'visit\'');
+  
+  // 辅助函数：确保表中存在某字段
+  async function ensureColumn(table, column, type) {
+    try {
+      const info = await client.execute(`PRAGMA table_info(${table})`);
+      const exists = info.rows.some(r => r.name === column);
+      if (!exists) {
+        await client.execute(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+        console.log(`Added column ${column} to ${table}`);
+      }
+    } catch (e) {
+      console.error(`Ensure column ${table}.${column} error:`, e.message);
+    }
+  }
+  
+  // 确保所有历史字段都存在
+  await ensureColumn('users', 'is_admin', 'INTEGER DEFAULT 0');
+  await ensureColumn('users', 'login_count', 'INTEGER DEFAULT 0');
+  await ensureColumn('users', 'last_login_at', 'TEXT DEFAULT \'\'');
+  await ensureColumn('tasks', 'max_accepts', 'INTEGER DEFAULT 0');
+  await ensureColumn('login_logs', 'visit_type', 'TEXT DEFAULT \'visit\'');
   
   // 插入示例数据
   const countResult = await client.execute('SELECT COUNT(*) as count FROM users');
