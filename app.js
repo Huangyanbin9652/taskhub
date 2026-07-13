@@ -22,8 +22,10 @@ app.use(cookieSession({
   keys: [process.env.SESSION_SECRET || 'taskhub-secret-key-2026-very-long-and-random'],
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7天
   httpOnly: true,
-  secure: false, // 允许 http 和 https
-  sameSite: 'lax'
+  secure: false, // 允许 http 和 https，兼容微信内置浏览器
+  sameSite: 'lax', // 保持 lax，微信内置浏览器兼容较好
+  signed: true,
+  overwrite: true
 }));
 
 // API 路由

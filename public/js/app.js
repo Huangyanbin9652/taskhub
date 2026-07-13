@@ -612,7 +612,10 @@ async function doAuth() {
     navigate('home');
     setTimeout(() => loadTasks(), 100);
     if (authMode === 'login' && res.welcome) {
-      setTimeout(() => showWelcome(res.welcome, res.user), 300);
+      // 微信内置浏览器渲染较慢，用 requestAnimationFrame + 500ms 确保 DOM 已渲染
+      requestAnimationFrame(() => {
+        setTimeout(() => showWelcome(res.welcome, res.user), 500);
+      });
     } else {
       setTimeout(() => toast('🎉 注册成功，欢迎加入！'), 200);
     }
@@ -639,11 +642,18 @@ function showWelcome(msg, user) {
 }
 
 async function logout() {
-  await API.post('/api/logout', {});
+  try {
+    // 微信内置浏览器可能拦截 cookie，先清本地再调接口
+    document.cookie = 'taskhub_session=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    document.cookie = 'taskhub_session.sig=; Path=/; Expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+    await API.post('/api/logout', {});
+  } catch (e) {
+    console.error('Logout error:', e);
+  }
   currentUser = null;
   toast('已退出登录');
-  navigate('home');
-  setTimeout(() => loadTasks(), 100);
+  // 强制刷新页面，确保微信内置浏览器也干净退出
+  window.location.href = '/';
 }
 
 // ===== Utils =====

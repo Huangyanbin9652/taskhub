@@ -134,6 +134,11 @@ async function initDB() {
     )
   `);
   
+  // 尝试给已有 login_logs 表加 visit_type 字段
+  try {
+    await client.execute(`ALTER TABLE login_logs ADD COLUMN visit_type TEXT DEFAULT 'visit'`);
+  } catch (e) { /* 字段已存在或表不存在 */ }
+  
   // 尝试给 users 表加 login_count 字段
   try {
     await client.execute(`ALTER TABLE users ADD COLUMN login_count INTEGER DEFAULT 0`);

@@ -136,7 +136,7 @@ router.post('/api/login', async (req, res) => {
     await db.prepare('UPDATE users SET login_count = ?, last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(newCount, user.id);
 
     // 记录登录日志
-    await db.prepare('INSERT INTO login_logs (user_id, username, ip, user_agent) VALUES (?, ?, ?, ?)').run(user.id, user.username, ip, userAgent);
+    await db.prepare('INSERT INTO login_logs (user_id, username, ip, user_agent, visit_type) VALUES (?, ?, ?, ?, ?)').run(user.id, user.username, ip, userAgent, 'login');
 
     req.session.user = { id: user.id, username: user.username, avatar: user.avatar, points: user.points, is_admin: !!user.is_admin, login_count: newCount };
 
