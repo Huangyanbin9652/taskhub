@@ -143,22 +143,34 @@
     if(trumps.length === n){
       if(n === 1) return {type:'single', suit:'T', size:1, cards};
       const groups = groupByLadder(cards, 'T');
-      if(Object.values(groups).some(g => g.length !== 2)) return null;
       const lvs = Object.keys(groups).map(Number).sort((a,b)=>a-b);
-      if(n === 2) return {type:'pair', suit:'T', size:1, cards};
-      for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
-      return {type:'tractor', suit:'T', size:lvs.length, cards};
+      if(Object.values(groups).every(g => g.length === 2)){
+        if(n === 2) return {type:'pair', suit:'T', size:1, cards};
+        for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
+        return {type:'tractor', suit:'T', size:lvs.length, cards};
+      }
+      if(Object.values(groups).every(g => g.length === 1)){
+        for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
+        return {type:'run', suit:'T', size:lvs.length, cards};
+      }
+      return null;
     }
     // 全副牌
     const s = cardSuit(cards[0]);
     if(cards.some(c => cardSuit(c) !== s)) return null;      // 混花色
     if(n === 1) return {type:'single', suit:s, size:1, cards};
     const groups = groupByLadder(cards, s);
-    if(Object.values(groups).some(g => g.length !== 2)) return null;
     const lvs = Object.keys(groups).map(Number).sort((a,b)=>a-b);
-    if(n === 2) return {type:'pair', suit:s, size:1, cards};
-    for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
-    return {type:'tractor', suit:s, size:lvs.length, cards};
+    if(Object.values(groups).every(g => g.length === 2)){
+      if(n === 2) return {type:'pair', suit:s, size:1, cards};
+      for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
+      return {type:'tractor', suit:s, size:lvs.length, cards};
+    }
+    if(Object.values(groups).every(g => g.length === 1)){
+      for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
+      return {type:'run', suit:s, size:lvs.length, cards};
+    }
+    return null;  // 含对又含单（如一对+一张）无效
   }
 
   // 首出花色（'T'=主 或 副花色）
@@ -580,6 +592,24 @@
   }
 
   function sideOf(idx){ return idx % 2 === STATE.dealer % 2 ? 0 : 1; } // 0庄家方 1闲家方
+  function sumScore(cards){ return cards.reduce((a,c)=>a+cardScore(c),0); }
+
+  // 取某花色手牌中最长的“连续单张”序列（每档仅 1 张），用于连子(run)首出
+  function longestRun(cards, suit){
+    const singles = cards.filter(c => {
+      const lv = ladderOf(c, suit);
+      return groupByLadder([c], suit)[lv].length === 1; // 该档仅 1 张（非对子）
+    }).sort((a,b) => ladderOf(a, suit) - ladderOf(b, suit));
+    if(singles.length < 2) return [];
+    const lvs = singles.map(c => ladderOf(c, suit));
+    let best = [], cur = [singles[0]];
+    for(let i=1;i<lvs.length;i++){
+      if(lvs[i] === lvs[i-1] + 1) cur.push(singles[i]);
+      else { if(cur.length > best.length) best = cur; cur = [singles[i]]; }
+    }
+    if(cur.length > best.length) best = cur;
+    return best;
+  }
 
   function aiChoosePlay(idx){
     if(STATE.trick.length === 0) return aiLead(idx);
@@ -596,16 +626,19 @@
       const groups = groupByLadder(cards, s);
       const tractors = tractorsInGroups(groups);
       const pairs = pairsInGroups(groups);
-      const sorted = cards.slice().sort((a,b) => suitLadder(a) - suitLadder(b));
+      const run = longestRun(cards, s);
       if(tractors.length){
         const t = tractors[0];
-        options.push({cards: t.cards, pri: 3 + t.size * 0.1, score: t.cards.reduce((a,c)=>a+cardScore(c),0)});
+        options.push({cards: t.cards, pri: 5 + t.size * 0.1, score: sumScore(t.cards)});
+      } else if(run.length >= 2){
+        // 连子清家：长连单优先甩
+        options.push({cards: run, pri: run.length >= 3 ? 4.5 : 3.8, score: sumScore(run)});
       } else if(pairs.length){
         const p = pairs[pairs.length-1];
-        options.push({cards: p, pri: 2, score: cardScore(p[0])*2});
+        options.push({cards: p, pri: 4, score: sumScore(p) * 2});
       } else {
-        const c = sorted[0];
-        options.push({cards: [c], pri: cardScore(c) ? 0.4 : 1, score: cardScore(c)});
+        const c = cards.slice().sort((a,b)=>suitLadder(a)-suitLadder(b))[0];
+        options.push({cards: [c], pri: cardScore(c) ? 0.6 : 1, score: cardScore(c)});
       }
     }
     const trumps = hand.filter(isTrump);
@@ -614,11 +647,10 @@
       const tractors = tractorsInGroups(groups);
       const pairs = pairsInGroups(groups);
       if(tractors.length) options.push({cards: tractors[0].cards, pri: 3.5, score: 0});
-      else if(pairs.length) options.push({cards: pairs[pairs.length-1], pri: 1.2, score: 0});
+      else if(pairs.length) options.push({cards: pairs[pairs.length-1], pri: 2, score: 0});
       else options.push({cards: [trumps.sort((a,b)=>cardPower(a)-cardPower(b))[0]], pri: 0.5, score: 0});
     }
     if(!options.length) return [hand[0]];
-    // 同优先级避免送分
     options.sort((a,b) => (b.pri - a.pri) || (a.score - b.score));
     return options[0].cards;
   }
@@ -627,17 +659,19 @@
     const hand = STATE.playerHands[idx];
     const leadCards = STATE.trick[0].cards;
     const leadSuit = suitOfLead(leadCards);
-    const leadCombo = analyzeCombo(leadCards);
+    const leadCombo = analyzeCombo(leadCards) || {type:''};
     const n = leadCards.length;
     const inSuit = c => leadSuit === 'T' ? isTrump(c) : (!isTrump(c) && cardSuit(c) === leadSuit);
     const must = hand.filter(inSuit);
     const others = hand.filter(c => !inSuit(c));
 
-    // 当前墩面信息
     let trickScore = 0;
     for(const t of STATE.trick) for(const c of t.cards) trickScore += cardScore(c);
     const curWinner = judgeTrick().winner;
     const curWinnerIsFriend = sideOf(curWinner) === sideOf(idx);
+    const totalLeft = STATE.playerHands.reduce((a,h)=>a+h.length,0);
+    const endGame = totalLeft <= 12;            // 残局：总剩余 ≤12 张，积极抢分 / 保底
+    const wantFight = !curWinnerIsFriend && (trickScore >= 10 || endGame || STATE.bottomScore > 0);
 
     if(must.length === 0){
       // 无该花色：毙 or 垫
@@ -645,48 +679,45 @@
       const canKill = leadSuit !== 'T' && trumps.length >= n &&
         (leadCombo.type === 'single' ? trumps.length >= 1 :
          leadCombo.type === 'pair' ? pairsInGroups(groupByLadder(trumps,'T')).length >= 1 :
-         tractorsInGroups(groupByLadder(trumps,'T')).some(t => t.size >= leadCombo.size));
-      const isLastTrick = STATE.playerHands.every(h => h.length <= n); // 本墩后手牌出完
-      const worthKill = !curWinnerIsFriend && (trickScore >= 10 || isLastTrick || STATE.bottomScore > 0);
-      if(canKill && worthKill){
-        if(leadCombo.type === 'single'){
-          return [trumps.sort((a,b)=>cardPower(b)-cardPower(a))[0]];
-        }
-        if(leadCombo.type === 'pair'){
-          const p = pairsInGroups(groupByLadder(trumps,'T'));
-          return p[p.length-1];
-        }
-        const t = tractorsInGroups(groupByLadder(trumps,'T')).find(t => t.size >= leadCombo.size);
-        return t.cards.slice(0, n);
+         (leadCombo.type === 'tractor' || leadCombo.type === 'run') ?
+            tractorsInGroups(groupByLadder(trumps,'T')).some(t => t.size >= (leadCombo.size||1)) :
+         trumps.length >= n);
+      if(canKill && wantFight){
+        if(leadCombo.type === 'single') return [trumps.sort((a,b)=>cardPower(b)-cardPower(a))[0]];
+        if(leadCombo.type === 'pair') return pairsInGroups(groupByLadder(trumps,'T'))[0];
+        const t = tractorsInGroups(groupByLadder(trumps,'T')).find(t => t.size >= (leadCombo.size||1));
+        return t ? t.cards.slice(0, n) : [trumps.sort((a,b)=>cardPower(b)-cardPower(a))[0]];
       }
       // 垫牌：队友赢则垫大分牌送队友，否则垫最小非分牌
       if(curWinnerIsFriend){
-        const scored = others.slice().sort((a,b) => cardScore(b) - cardScore(a) || cardPower(b) - cardPower(a));
-        return scored.slice(0, n);
+        return others.slice().sort((a,b)=>cardScore(b)-cardScore(a)||cardPower(b)-cardPower(a)).slice(0,n);
       }
-      const safe = others.slice().sort((a,b) => (cardScore(a) - cardScore(b)) || (cardPower(a) - cardPower(b)));
-      return safe.slice(0, n);
+      return others.slice().sort((a,b)=>(cardScore(a)-cardScore(b))||(cardPower(a)-cardPower(b))).slice(0,n);
     }
 
     // 有该花色必须跟
     const groups = groupByLadder(must, leadSuit);
-    const fill = count => {
-      // 从 others 里补垫牌（优先最小非分）
-      const safe = others.slice().sort((a,b) => (cardScore(a) - cardScore(b)) || (cardPower(a) - cardPower(b)));
-      return must.concat(safe).slice(0, count);
-    };
+    const fill = count => must.concat(others.slice().sort((a,b)=>(cardScore(a)-cardScore(b))||(cardPower(a)-cardPower(b)))).slice(0,count);
     if(leadCombo.type === 'single'){
-      // 若敌方在赢且分多，且必须跟的牌里有能反超的？must 全是本花色，无法反超 → 出最小
       return [must.slice().sort((a,b)=>ladderOf(a,leadSuit)-ladderOf(b,leadSuit))[0]];
     }
     if(leadCombo.type === 'pair'){
       const pairs = pairsInGroups(groups);
+      if(pairs.length) return (!curWinnerIsFriend && (trickScore>=15||endGame)) ? pairs[pairs.length-1] : pairs[0];
+      return fill(n);
+    }
+    if(leadCombo.type === 'run'){
+      // 连子首出：有对子尽量跟对，否则跟最小单张补够 n 张
+      const pairs = pairsInGroups(groups);
       if(pairs.length){
-        // 敌方在赢且分多 → 出最大对搏一把，否则最小对
-        if(!curWinnerIsFriend && trickScore >= 15){
-          return pairs[pairs.length-1];
+        const use = Math.min(pairs.length, Math.floor(n/2));
+        const cards = [];
+        for(let i=0;i<use;i++) cards.push(...pairs[i]);
+        if(cards.length < n){
+          const rest = must.filter(c => !cards.includes(c)).sort((a,b)=>ladderOf(a,leadSuit)-ladderOf(b,leadSuit));
+          cards.push(...rest.slice(0, n - cards.length));
         }
-        return pairs[0];
+        return cards;
       }
       return fill(n);
     }
@@ -695,7 +726,6 @@
     if(tractors.length){
       const t = tractors.find(t => t.size >= leadCombo.size) || tractors[0];
       if(t.cards.length >= n) return t.cards.slice(0, n);
-      // 拖拉机不足 n 张：优先补对，再补单张，最后垫牌
       const extra = [];
       const remaining = must.filter(c => !t.cards.includes(c));
       const remPairs = pairsInGroups(groupByLadder(remaining, leadSuit));
@@ -708,8 +738,7 @@
         if(!extra.includes(c)) extra.push(c);
       }
       if(t.cards.length + extra.length < n){
-        const safe = others.slice().sort((a,b)=>(cardScore(a)-cardScore(b))||(cardPower(a)-cardPower(b)));
-        extra.push(...safe.slice(0, n - t.cards.length - extra.length));
+        extra.push(...others.slice().sort((a,b)=>(cardScore(a)-cardScore(b))||(cardPower(a)-cardPower(b))).slice(0, n - t.cards.length - extra.length));
       }
       return t.cards.concat(extra);
     }
@@ -723,8 +752,7 @@
         cards.push(...rest.slice(0, n - cards.length));
       }
       if(cards.length < n){
-        const safe = others.slice().sort((a,b)=>(cardScore(a)-cardScore(b))||(cardPower(a)-cardPower(b)));
-        cards.push(...safe.slice(0, n - cards.length));
+        cards.push(...others.slice().sort((a,b)=>(cardScore(a)-cardScore(b))||(cardPower(a)-cardPower(b))).slice(0, n - cards.length));
       }
       return cards;
     }

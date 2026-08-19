@@ -4,7 +4,7 @@
 (function(){
   const EZ = window.EightZero;
   const FAST = () => !!window.__TEST_FAST__; // 测试加速开关
-  const DEAL_MS = () => FAST() ? 12 : 120;    // 发牌间隔
+  const DEAL_MS = () => FAST() ? 12 : 250;    // 发牌间隔（放慢以便叫主）
   const AI_MS = () => FAST() ? 30 : 750;      // AI 思考
   const TRICK_MS = () => FAST() ? 40 : 600;   // 收墩停顿
   let mySelectedCards = [];   // 出牌选中
@@ -166,7 +166,7 @@
     }).join('');
     const handCount = s.playerHands[0].length;
     return `
-      <div class="deal-info" id="bottom-count">📥 你是庄家：已收 8 张底牌入手（现 ${handCount} 张），请选 <b>8 张</b> 埋底（已选 ${selectedBottom.length}/8），埋完剩 25 张开始出牌</div>
+      <div class="deal-info" id="bottom-count">📥 你是庄家：已收 8 张底牌入手（现 ${handCount} 张），手牌中<b style="color:#00b894;">绿色框</b>为新增底牌，请选 <b>8 张</b> 埋底（已选 ${selectedBottom.length}/8），埋完剩 25 张开始出牌</div>
       <div class="bottom-pool"><span class="pool-label">底牌</span>${bottomCards}</div>
       <div style="margin-top:10px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
         <button class="btn btn-outline" style="font-size:0.8rem;" onclick="GameUI.buryOriginalBottom()">📍 直接埋回这 8 张底牌</button>
@@ -540,6 +540,19 @@
   function rerender(){
     const content = document.getElementById('page-content');
     if(content) content.innerHTML = renderTable();
+    markIncomingBottom(); // 埋底阶段把手牌中“原底牌”高亮，方便识别新增的牌
+  }
+
+  // 进入埋底后，把手牌区里属于原 8 张底牌的牌高亮（数量匹配法，兼容重复牌）
+  function markIncomingBottom(){
+    const s = EZ.STATE;
+    if(s.phase !== 'bottoming' || s.dealer !== 0) return;
+    document.querySelectorAll('#my-hand .hand-card.from-bottom').forEach(e => e.classList.remove('from-bottom'));
+    s.bottom.forEach(card => {
+      const el = [...document.querySelectorAll(`#my-hand .hand-card[data-card="${card}"]`)]
+        .find(e => !e.classList.contains('from-bottom'));
+      if(el) el.classList.add('from-bottom');
+    });
   }
 
   // ===== 新游戏 =====

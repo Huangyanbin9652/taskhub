@@ -481,6 +481,12 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 .hand-card:first-child { margin-left: 0; }
 .hand-card.selected { transform: translateY(-14px); z-index: 2; }
 .hand-card.selected .mini { outline: 3px solid var(--primary); }
+.hand-card.from-bottom { box-shadow: 0 0 0 3px #00b894, 0 2px 10px rgba(0,184,148,0.45); position: relative; }
+.hand-card.from-bottom::after {
+  content: '底'; position: absolute; top: -2px; left: 50%; transform: translateX(-50%);
+  font-size: 0.55rem; line-height: 1; color: #fff; background: #00b894;
+  padding: 1px 3px; border-radius: 4px;
+}
 .mini {
   width: 44px; height: 64px; background: #fff; border-radius: 7px;
   display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 700;
