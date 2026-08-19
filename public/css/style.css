@@ -417,34 +417,60 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 }
 .bid-suit:active { border-color: var(--primary); background: #F3E8FF; }
 
-.trick-area { position: relative; width: 100%; height: 120px; }
-.trick-card { position: absolute; width: 56px; height: 80px; }
-.trick-card.pos-0 { left: 50%; transform: translateX(-50%); bottom: 0; } /* 自己 */
-.trick-card.pos-1 { right: 8%; top: 20%; } /* 下家 */
-.trick-card.pos-2 { left: 50%; transform: translateX(-50%); top: 0; } /* 对家 */
-.trick-card.pos-3 { left: 8%; top: 20%; } /* 上家 */
+.trick-area { position: relative; width: 100%; min-height: 130px; }
+.played-cards { position: absolute; display: flex; gap: 3px; align-items: center; }
+.played-cards.pos-0 { left: 50%; transform: translateX(-50%); bottom: 0; } /* 自己 */
+.played-cards.pos-1 { right: 4%; top: 26%; } /* 下家 */
+.played-cards.pos-2 { left: 50%; transform: translateX(-50%); top: 0; } /* 对家 */
+.played-cards.pos-3 { left: 4%; top: 26%; } /* 上家 */
+.played-cards .card { width: 42px; height: 60px; font-size: 0.85rem; flex-direction: column; }
+.played-cards .card b { font-size: 1rem; }
+
+.deal-info { text-align: center; font-size: 0.92rem; color: var(--text); font-weight: 600; padding: 6px 0; }
+.trump-declared {
+  margin: 8px auto 0; display: inline-block; padding: 5px 14px; border-radius: 20px;
+  background: linear-gradient(135deg,#F3E8FF,#E8F0FE); color: var(--primary); font-size: 0.85rem; font-weight: 700;
+}
+.bid-override { border-color: #e67e22 !important; background: #FFF3E0 !important; }
+.bottom-pool {
+  margin: 10px auto 0; display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center;
+  padding: 8px 10px; background: rgba(108,92,231,0.08); border-radius: var(--radius-sm);
+}
+.pool-label { font-size: 0.75rem; color: var(--text-light); font-weight: 700; margin-right: 4px; }
+.bottom-pool .card { width: 34px; height: 48px; font-size: 0.7rem; flex-direction: column; }
+.bottom-pool .card b { font-size: 0.82rem; }
+.dealer-tag {
+  display: inline-block; background: linear-gradient(135deg,#f6d365,#fda085); color: #fff;
+  font-size: 0.65rem; font-weight: 800; padding: 1px 5px; border-radius: 4px; margin-right: 3px;
+}
+.sc-note { color: var(--text-lighter); font-size: 0.7rem; }
 
 .card {
   width: 56px; height: 80px; background: #fff; border-radius: 8px;
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center; flex-direction: column;
   box-shadow: 0 2px 6px rgba(0,0,0,0.12); font-size: 1.1rem; font-weight: 700;
 }
-.card-red { color: #e74c3c; }
-.card-black { color: #2c3e50; }
+.card b { font-size: 1.25rem; line-height: 1; }
+.card span { font-size: 0.6rem; font-weight: 600; }
+.card.red { color: #e74c3c; }
+.card.black { color: #2c3e50; }
 .card-trump { background: linear-gradient(135deg,#F3E8FF,#fff); border: 2px solid var(--primary); }
 .joker-big { background: linear-gradient(135deg,#ff9a9e,#fecfef); color: #c0392b; }
 .joker-small { background: linear-gradient(135deg,#a1c4fd,#c2e9fb); color: #2c3e50; }
 
 .my-hand {
-  display: flex; flex-wrap: nowrap; overflow-x: auto; gap: 4px;
+  display: flex; flex-wrap: wrap; gap: 3px;
   padding: 12px 6px; background: rgba(255,255,255,0.7);
   border-radius: var(--radius); box-shadow: var(--shadow);
-  margin-top: auto;
+  margin-top: auto; justify-content: center;
 }
 .hand-card {
   flex-shrink: 0; cursor: pointer; transition: transform 0.1s; padding: 2px;
+  margin-left: -14px;
 }
-.hand-card.selected { transform: translateY(-14px); background: rgba(108,92,231,0.15); border-radius: 8px; }
+.hand-card:first-child { margin-left: 0; }
+.hand-card.selected { transform: translateY(-14px); z-index: 2; }
+.hand-card.selected .mini { outline: 3px solid var(--primary); }
 .mini {
   width: 44px; height: 64px; background: #fff; border-radius: 7px;
   display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: 700;
@@ -453,6 +479,7 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 .mini.r { color: #e74c3c; }
 .mini.b { color: #2c3e50; }
 .mini.joker { font-size: 1.2rem; }
+.mini-trump { background: linear-gradient(135deg,#F3E8FF,#fff); outline: 1px solid var(--primary); }
 
 .game-status { margin-top: 12px; text-align: center; min-height: 48px; }
 .status-turn { font-weight: 700; color: var(--primary); font-size: 1rem; }
