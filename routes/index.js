@@ -437,6 +437,48 @@ router.get('/api/feedback', async (req, res) => {
   }
 });
 
+// ===== 八十分游戏战绩 =====
+
+// 保存一局战绩
+router.post('/api/game/records', requireLogin, async (req, res) => {
+  try {
+    const { start_level, end_level, result, yj_score, msg } = req.body;
+    await db.prepare(
+      'INSERT INTO game_records (user_id, start_level, end_level, result, yj_score, msg) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(req.session.user.id, start_level || '2', end_level || '2', result || '', yj_score || 0, msg || '');
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Game record error:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 我的历史战绩
+router.get('/api/game/records', requireLogin, async (req, res) => {
+  try {
+    const records = await db.prepare('SELECT * FROM game_records WHERE user_id = ? ORDER BY id DESC LIMIT 50').all(req.session.user.id);
+    res.json({ records });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 我的累计战绩统计
+router.get('/api/game/stats', requireLogin, async (req, res) => {
+  try {
+    const total = await db.prepare('SELECT COUNT(*) as c FROM game_records WHERE user_id = ?').get(req.session.user.id);
+    const wins = await db.prepare(`SELECT COUNT(*) as c FROM game_records WHERE user_id = ? AND result IN ('大光','小光','庄家胜')`).get(req.session.user.id);
+    const dg = await db.prepare(`SELECT COUNT(*) as c FROM game_records WHERE user_id = ? AND result = '大光'`).get(req.session.user.id);
+    res.json({
+      games: total ? total.c : 0,
+      wins: wins ? wins.c : 0,
+      dagguang: dg ? dg.c : 0
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ===== 管理员功能 =====
 
 // 获取所有用户列表

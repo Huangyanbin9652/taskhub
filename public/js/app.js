@@ -81,6 +81,9 @@ function render(params = {}) {
       <button class="${currentPage === 'leaderboard' ? 'active' : ''}" onclick="navigate('leaderboard')">
         <span class="tab-icon">🏆</span>排行
       </button>
+      <button class="${currentPage === 'game' ? 'active' : ''}" onclick="navigate('game')">
+        <span class="tab-icon">🃏</span>打牌
+      </button>
       <button class="${currentPage === 'profile' || currentPage === 'auth' ? 'active' : ''}" onclick="navigate('${currentUser ? 'profile' : 'auth'}')">
         <span class="tab-icon">${currentUser ? currentUser.avatar : '👤'}</span>${currentUser ? '我的' : '登录'}
       </button>
@@ -105,9 +108,32 @@ function renderPage(params) {
     case 'feedback-list': return renderFeedbackList();
     case 'terms': return renderTerms();
     case 'admin': return renderAdmin();
+    case 'game': return renderGamePage();
     default: return renderHome();
   }
 }
+
+// ===== 八十分游戏页 =====
+function renderGamePage(){
+  if(!currentUser){
+    return `<div class="empty" style="padding-top:80px;"><div class="emoji">🔒</div><p>请先登录才能玩八十分</p><br><button class="btn btn-primary" style="max-width:200px;margin:0 auto;" onclick="navigate('auth')">去登录</button></div>`;
+  }
+  return window.GameUI.renderLobby();
+}
+
+// 开始游戏
+function startGame(level){
+  if(!currentUser){ toast('请先登录'); return; }
+  window.EightZero.startNewGame(level || '2');
+  window.GameUI.currentState = window.EightZero.STATE;
+  renderGameTable();
+}
+function renderGameTable(){
+  const content = document.getElementById('page-content');
+  if(content) content.innerHTML = window.GameUI.renderTable();
+}
+function showGameRules(){ window.GameUI.showGameRules(); }
+function loadGameHistory(){ window.GameUI.loadGameHistory(); }
 
 // ===== Home Page =====
 function renderHome() {
@@ -691,6 +717,7 @@ function bindPageEvents() {
     case 'my-tasks': loadMyTasks(); break;
     case 'my-accepts': loadMyAccepts(); break;
     case 'feedback-list': loadFeedbackList(); break;
+    case 'game': break; // 游戏页无需异步加载
     case 'admin': loadAdminUsers(); break;
   }
 }

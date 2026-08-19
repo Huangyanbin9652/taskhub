@@ -164,6 +164,21 @@ async function initDB() {
   await ensureColumn('tasks', 'max_accepts', 'INTEGER DEFAULT 0');
   await ensureColumn('login_logs', 'visit_type', 'TEXT DEFAULT \'visit\'');
   
+  // 创建八十分游戏战绩表
+  await client.execute(`
+    CREATE TABLE IF NOT EXISTS game_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      start_level TEXT DEFAULT '2',
+      end_level TEXT DEFAULT '2',
+      result TEXT DEFAULT '',
+      yj_score INTEGER DEFAULT 0,
+      msg TEXT DEFAULT '',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    )
+  `);
+  
   // 插入示例数据
   const countResult = await client.execute('SELECT COUNT(*) as count FROM users');
   if (countResult.rows[0].count === 0) {
