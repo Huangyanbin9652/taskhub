@@ -95,7 +95,8 @@
     else body = renderDealing(s);
     return `
       <div class="game-table">
-        ${renderTopArea(s)}
+        ${renderGameInfo(s)}
+        ${renderOpponents(s)}
         <div class="game-center" id="game-center">${body}</div>
         <div class="my-hand" id="my-hand">${renderHand(sortHand(s.playerHands[0]))}</div>
       </div>
@@ -103,20 +104,26 @@
     `;
   }
 
-  // 顶部信息 + 三家
-  function renderTopArea(s){
-    const dealerTag = i => i === s.dealer ? '<span class="dealer-tag">庄</span>' : '';
+  // 顶部信息栏（id 定点更新，绝不整块重建 opponents）
+  function renderGameInfo(s){
     const trump = s.trumpSuit ? `主 ${EZ.SUIT_CH[s.trumpSuit]}` : '等待定主';
     return `
-      <div class="game-info">
+      <div class="game-info" id="game-info">
         <div class="game-level">打 <b>${s.level}</b> ｜ ${trump}</div>
         <div class="game-score"><span class="sc-them">闲家 ${s.yjScore} 分</span><span class="sc-note">/80 上台</span></div>
         <div class="game-round">${s.phase==='playing' ? `第 ${s.trickCount+1} 轮` : (s.phase==='dealing' ? `发牌 ${s.dealCount}/100` : '')}</div>
       </div>
+    `;
+  }
+
+  // 三家信息（牌数 span 带 id，发牌时只更新文本）
+  function renderOpponents(s){
+    const dealerTag = i => i === s.dealer ? '<span class="dealer-tag">庄</span>' : '';
+    return `
       <div class="opponents">
-        <div class="oppo oppo-top">${dealerTag(2)}对家<br>${s.players[2]} <span class="hand-count">${s.playerHands[2].length}张</span></div>
-        <div class="oppo oppo-right">${dealerTag(1)}下家<br>${s.players[1]} <span class="hand-count">${s.playerHands[1].length}张</span></div>
-        <div class="oppo oppo-left">${dealerTag(3)}上家<br>${s.players[3]} <span class="hand-count">${s.playerHands[3].length}张</span></div>
+        <div class="oppo oppo-top">${dealerTag(2)}对家<br>${s.players[2]} <span class="hand-count" id="hand-count-2">${s.playerHands[2].length}张</span></div>
+        <div class="oppo oppo-right">${dealerTag(1)}下家<br>${s.players[1]} <span class="hand-count" id="hand-count-1">${s.playerHands[1].length}张</span></div>
+        <div class="oppo oppo-left">${dealerTag(3)}上家<br>${s.players[3]} <span class="hand-count" id="hand-count-3">${s.playerHands[3].length}张</span></div>
       </div>
     `;
   }
@@ -149,11 +156,12 @@
       return `<div class="deal-info">🤖 AI 庄家埋底中…</div>`;
     }
     const bottomCards = s.bottom.map(c => cardFace(c, true)).join('');
+    const handCount = s.playerHands[0].length;
     return `
-      <div class="deal-info" id="bottom-count">📥 你是庄家：已收底牌，请选 <b>8 张</b> 埋底（已选 ${selectedBottom.length}/8）</div>
+      <div class="deal-info" id="bottom-count">📥 你是庄家：已收 8 张底牌入手（现 ${handCount} 张），请选 <b>8 张</b> 埋底（已选 ${selectedBottom.length}/8），埋完剩 25 张开始出牌</div>
       <div class="bottom-pool"><span class="pool-label">底牌</span>${bottomCards}</div>
       <div style="margin-top:10px;">
-        <button class="btn ${selectedBottom.length===8 ? 'btn-primary' : 'btn-outline'}" onclick="GameUI.confirmBottom()">✅ 确认埋底</button>
+        <button class="btn ${selectedBottom.length===8 ? 'btn-primary' : 'btn-outline'}" onclick="GameUI.confirmBottom()">✅ 确认埋底（${selectedBottom.length}/8）</button>
       </div>
     `;
   }
@@ -267,7 +275,9 @@
   }
 
   function updateDealUI(){
-    // 轻量更新：手牌 + 中央区 + 顶部计数
+    // 轻量定点更新：手牌 + 中央区 + 状态条 + 顶栏计数 + 三家牌数
+    // 注意：顶栏只替换 #game-info 自身，三家牌数只改文本，
+    // 绝不整块重建（否则 .opponents 会重复堆积，把牌桌撑坏）
     const s = EZ.STATE;
     const handEl = document.getElementById('my-hand');
     if(handEl) handEl.innerHTML = renderHand(sortHand(s.playerHands[0]));
@@ -275,9 +285,12 @@
     if(center) center.innerHTML = renderDealing(s);
     const status = document.getElementById('game-status');
     if(status) status.innerHTML = renderStatus(s);
-    // 更新三家牌数与轮次
-    const top = document.querySelector('.game-info');
-    if(top) top.outerHTML = renderTopArea(s);
+    const top = document.getElementById('game-info');
+    if(top) top.outerHTML = renderGameInfo(s); // 只替换顶栏自身（含发牌计数）
+    for(let i=1;i<4;i++){
+      const cnt = document.getElementById('hand-count-'+i);
+      if(cnt) cnt.textContent = s.playerHands[i].length + '张';
+    }
   }
 
   function stopDealTimer(){
@@ -313,8 +326,15 @@
 
   // ===== 埋底交互 =====
   function updateBottomCount(){
+    const s = EZ.STATE;
     const el = document.getElementById('bottom-count');
-    if(el) el.textContent = `请选 8 张埋底（已选 ${selectedBottom.length}/8）`;
+    if(el) el.innerHTML = `📥 你是庄家：已收 8 张底牌入手（现 ${s.playerHands[0].length} 张），请选 <b>8 张</b> 埋底（已选 ${selectedBottom.length}/8），埋完剩 25 张开始出牌`;
+    // 确认按钮文案与样式同步
+    const btn = document.querySelector('#game-center .btn');
+    if(btn){
+      btn.textContent = `✅ 确认埋底（${selectedBottom.length}/8）`;
+      btn.className = selectedBottom.length === 8 ? 'btn btn-primary' : 'btn btn-outline';
+    }
   }
 
   // ===== 出牌交互（基于 DOM 元素，支持同名的两张重复牌分别选中）=====
