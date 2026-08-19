@@ -26,6 +26,8 @@
     newGame,
     skipDealing,
     confirmBottom,
+    buryOriginalBottom,
+    toggleBottomPoolCard,
     restartDealing,
   };
 
@@ -155,13 +157,20 @@
       // AI 庄家自动埋底（应在进入时已处理）
       return `<div class="deal-info">🤖 AI 庄家埋底中…</div>`;
     }
-    const bottomCards = s.bottom.map(c => cardFace(c, true)).join('');
+    // 底牌槽位可点击直接选中（数量匹配法保持与手牌区选中同步）
+    const bottomCards = s.bottom.map((c, i) => {
+      let need = 0;
+      for(let k=0;k<=i;k++) if(s.bottom[k] === c) need++;
+      const sel = selectedBottom.filter(x => x === c).length >= need ? ' selected' : '';
+      return `<span class="pool-card-wrap${sel}" data-bidx="${i}" onclick="GameUI.toggleBottomPoolCard(${i})" title="点击选中/取消埋底">${cardFace(c, true)}</span>`;
+    }).join('');
     const handCount = s.playerHands[0].length;
     return `
       <div class="deal-info" id="bottom-count">📥 你是庄家：已收 8 张底牌入手（现 ${handCount} 张），请选 <b>8 张</b> 埋底（已选 ${selectedBottom.length}/8），埋完剩 25 张开始出牌</div>
       <div class="bottom-pool"><span class="pool-label">底牌</span>${bottomCards}</div>
-      <div style="margin-top:10px;">
-        <button class="btn ${selectedBottom.length===8 ? 'btn-primary' : 'btn-outline'}" onclick="GameUI.confirmBottom()">✅ 确认埋底（${selectedBottom.length}/8）</button>
+      <div style="margin-top:10px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+        <button class="btn btn-outline" style="font-size:0.8rem;" onclick="GameUI.buryOriginalBottom()">📍 直接埋回这 8 张底牌</button>
+        <button id="confirm-bottom-btn" class="btn ${selectedBottom.length===8 ? 'btn-primary' : 'btn-outline'}" onclick="GameUI.confirmBottom()">✅ 确认埋底（${selectedBottom.length}/8）</button>
       </div>
     `;
   }
@@ -196,7 +205,7 @@
   function renderStatus(s){
     if(s.phase === 'dealing') return `<div class="status-wait">发牌中，摸到级牌可报主</div>`;
     if(s.phase === 'bottoming'){
-      if(s.dealer === 0) return `<div class="status-turn">选 8 张牌埋底（点选下方手牌）</div>`;
+      if(s.dealer === 0) return `<div class="status-turn">选 8 张牌埋底：点上方底牌或下方手牌均可选中</div>`;
       return `<div class="status-wait">AI 庄家埋底中…</div>`;
     }
     if(s.phase === 'playing'){
@@ -329,12 +338,77 @@
     const s = EZ.STATE;
     const el = document.getElementById('bottom-count');
     if(el) el.innerHTML = `📥 你是庄家：已收 8 张底牌入手（现 ${s.playerHands[0].length} 张），请选 <b>8 张</b> 埋底（已选 ${selectedBottom.length}/8），埋完剩 25 张开始出牌`;
-    // 确认按钮文案与样式同步
-    const btn = document.querySelector('#game-center .btn');
+    // 确认按钮文案与样式同步（用 id 精确定位，避免误中其他按钮）
+    const btn = document.getElementById('confirm-bottom-btn');
     if(btn){
       btn.textContent = `✅ 确认埋底（${selectedBottom.length}/8）`;
       btn.className = selectedBottom.length === 8 ? 'btn btn-primary' : 'btn btn-outline';
     }
+    syncBottomPoolUI();
+  }
+
+  // 底牌槽位选中态与手牌区选中数量同步（数量匹配法，兼容重复牌）
+  function syncBottomPoolUI(){
+    const s = EZ.STATE;
+    document.querySelectorAll('.pool-card-wrap').forEach(w => {
+      const idx = Number(w.dataset.bidx);
+      const card = s.bottom[idx];
+      if(!card) return;
+      let need = 0; // 该槽位之前（含自身）的同名底牌张数
+      for(let i=0;i<=idx;i++) if(s.bottom[i] === card) need++;
+      const have = selectedBottom.filter(c => c === card).length; // 已选同名牌总数
+      w.classList.toggle('selected', have >= need);
+    });
+  }
+
+  // 直接点选中央底牌区的某张牌 → 选中/取消埋底
+  function toggleBottomPoolCard(idx){
+    const s = EZ.STATE;
+    if(s.phase !== 'bottoming' || s.dealer !== 0) return;
+    const card = s.bottom[idx];
+    if(!card) return;
+    const slot = document.querySelector(`.pool-card-wrap[data-bidx="${idx}"]`);
+    const isSel = slot && slot.classList.contains('selected');
+    if(isSel){
+      // 取消：去掉一张该牌的选中
+      const i = selectedBottom.indexOf(card);
+      if(i > -1) selectedBottom.splice(i, 1);
+      const el = document.querySelector(`#my-hand .hand-card[data-card="${card}"].selected`);
+      if(el) el.classList.remove('selected');
+      if(slot) slot.classList.remove('selected');
+    } else {
+      if(selectedBottom.length >= 8){ toast('最多埋 8 张'); return; }
+      // 在手牌区找到该牌未选中的那张（可能是刚收的底牌本身）
+      const el = [...document.querySelectorAll(`#my-hand .hand-card[data-card="${card}"]`)]
+        .find(e => !e.classList.contains('selected'));
+      if(!el){ toast('这张牌已选中'); return; }
+      el.classList.add('selected');
+      selectedBottom.push(card);
+      if(slot) slot.classList.add('selected');
+    }
+    updateBottomCount();
+  }
+
+  // 一键把刚收到的 8 张原底牌直接选为埋底牌
+  function buryOriginalBottom(){
+    const s = EZ.STATE;
+    if(s.phase !== 'bottoming' || s.dealer !== 0) return;
+    // 清空当前所有选择
+    selectedBottom = [];
+    document.querySelectorAll('#my-hand .hand-card.selected').forEach(e => e.classList.remove('selected'));
+    document.querySelectorAll('.pool-card-wrap.selected').forEach(e => e.classList.remove('selected'));
+    // 逐张选中（querySelectorAll 保证重复牌分别选中）
+    s.bottom.forEach((c, i) => {
+      const el = [...document.querySelectorAll(`#my-hand .hand-card[data-card="${c}"]`)]
+        .find(e => !e.classList.contains('selected'));
+      if(el){
+        el.classList.add('selected');
+        selectedBottom.push(c);
+      }
+      const slot = document.querySelector(`.pool-card-wrap[data-bidx="${i}"]`);
+      if(slot) slot.classList.add('selected');
+    });
+    updateBottomCount();
   }
 
   // ===== 出牌交互（基于 DOM 元素，支持同名的两张重复牌分别选中）=====

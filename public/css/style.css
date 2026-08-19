@@ -439,6 +439,16 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 .pool-label { font-size: 0.75rem; color: var(--text-light); font-weight: 700; margin-right: 4px; }
 .bottom-pool .card { width: 34px; height: 48px; font-size: 0.7rem; flex-direction: column; }
 .bottom-pool .card b { font-size: 0.82rem; }
+/* 底牌槽位可点击直接选中埋底 */
+.pool-card-wrap {
+  cursor: pointer; border-radius: 8px; padding: 2px;
+  border: 2px solid transparent; transition: border-color .15s, background .15s;
+}
+.pool-card-wrap.selected {
+  border-color: var(--primary);
+  background: rgba(108,92,231,0.15);
+  transform: translateY(-4px);
+}
 .dealer-tag {
   display: inline-block; background: linear-gradient(135deg,#f6d365,#fda085); color: #fff;
   font-size: 0.65rem; font-weight: 800; padding: 1px 5px; border-radius: 4px; margin-right: 3px;
