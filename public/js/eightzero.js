@@ -149,11 +149,8 @@
         for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
         return {type:'tractor', suit:'T', size:lvs.length, cards};
       }
-      if(Object.values(groups).every(g => g.length === 1)){
-        for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
-        return {type:'run', suit:'T', size:lvs.length, cards};
-      }
-      return null;
+      // 含单张或混合（主牌连单/混合）→ 甩牌(sweep)，首出允许但需校验无敌
+      return {type:'sweep', suit:'T', size:n, cards};
     }
     // 全副牌
     const s = cardSuit(cards[0]);
@@ -166,10 +163,8 @@
       for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
       return {type:'tractor', suit:s, size:lvs.length, cards};
     }
-    if(Object.values(groups).every(g => g.length === 1)){
-      for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
-      return {type:'run', suit:s, size:lvs.length, cards};
-    }
+    // 含单张或混合（副牌连单/混合）→ 甩牌(sweep)，首出允许但需校验无敌
+    return {type:'sweep', suit:s, size:n, cards};
     return null;  // 含对又含单（如一对+一张）无效
   }
 
@@ -195,7 +190,7 @@
 
     if(STATE.trick.length === 0){
       const combo = analyzeCombo(cards);
-      if(!combo) return {ok:false, msg:'首出必须是同花色的单张、对子或拖拉机（相邻连对）'};
+      if(!combo) return {ok:false, msg:'首出必须是同花色的单张、对子、拖拉机（相邻连对）或甩牌（混合单张+对子+拖拉机）'};
       return {ok:true};
     }
 
@@ -298,6 +293,7 @@
     STATE.trick = [];
     STATE.trickCount = 0;
     STATE.yjScore = 0;
+    STATE.playedHistory = [];   // 记牌：记录所有已打出的牌（用于甩牌无敌推断）
     STATE.lastTrickWinner = -1;
     STATE.lastTrickWinCards = [];
     STATE.lastTrickLeadSuit = null;
@@ -432,6 +428,7 @@
     const hand = STATE.playerHands[idx];
     for(const c of cards) hand.splice(hand.indexOf(c), 1);
     STATE.trick.push({player: idx, cards: [...cards]});
+    STATE.playedHistory.push(...cards);   // 记牌
     if(STATE.trick.length === 1) STATE.trickLeader = idx;
     const combo = analyzeCombo(cards) || {type:''};
     const typeCh = combo.type === 'single' ? '' : combo.type === 'pair' ? ' 对' : combo.type === 'tractor' ? ` ${combo.size}连拖拉机` : '';
@@ -594,21 +591,50 @@
   function sideOf(idx){ return idx % 2 === STATE.dealer % 2 ? 0 : 1; } // 0庄家方 1闲家方
   function sumScore(cards){ return cards.reduce((a,c)=>a+cardScore(c),0); }
 
-  // 取某花色手牌中最长的“连续单张”序列（每档仅 1 张），用于连子(run)首出
-  function longestRun(cards, suit){
-    const singles = cards.filter(c => {
-      const lv = ladderOf(c, suit);
-      return groupByLadder([c], suit)[lv].length === 1; // 该档仅 1 张（非对子）
-    }).sort((a,b) => ladderOf(a, suit) - ladderOf(b, suit));
-    if(singles.length < 2) return [];
-    const lvs = singles.map(c => ladderOf(c, suit));
-    let best = [], cur = [singles[0]];
-    for(let i=1;i<lvs.length;i++){
-      if(lvs[i] === lvs[i-1] + 1) cur.push(singles[i]);
-      else { if(cur.length > best.length) best = cur; cur = [singles[i]]; }
+  // 甩牌无敌校验：cards 为同花色（suit,'T'=主）一组牌，idx 出牌者。
+  // 返回 true 表示该花色这些牌（单张/对子）都是最大的，别人无法管住（跟牌或毙牌都不行）。
+  function canThrowSweep(cards, suit, idx){
+    const isT = suit === 'T';
+    const known = [
+      ...STATE.playedHistory.filter(c => isT ? isTrump(c) : (!isTrump(c) && cardSuit(c) === suit)),
+      ...STATE.playerHands[idx].filter(c => (isT ? isTrump(c) : (!isTrump(c) && cardSuit(c) === suit))),
+    ];
+    const myTrump = STATE.playerHands[idx].filter(isTrump).length;
+    const histTrump = STATE.playedHistory.filter(isTrump).length;
+    const oppTrump = 34 - myTrump - histTrump; // 别人手里主牌总数（参考用，不强制拦截，见下方说明）
+    function rankLadderOf(rankStr){
+      if(isT){
+        const ranks = RANKS.filter(x => x !== STATE.level).sort((a,b)=>RANK_VALUES[a]-RANK_VALUES[b]);
+        const maxMain = ranks.length;
+        if(rankStr === 'JB') return maxMain + 4;
+        if(rankStr === 'JS') return maxMain + 3;
+        if(rankStr === STATE.level) return maxMain + 2;
+        return ranks.indexOf(rankStr) + 1;
+      }
+      return RANK_VALUES[rankStr];
     }
-    if(cur.length > best.length) best = cur;
-    return best;
+    function remainOf(rankStr){ // 该点数别人手里剩余张数（两副牌每点数 2 张，王各 1 张）
+      if(rankStr === 'JB' || rankStr === 'JS') return 1 - known.filter(c => c === rankStr).length;
+      return 2 - known.filter(c => cardRank(c) === rankStr && (isT ? isTrump(c) : !isTrump(c))).length;
+    }
+    const groups = groupByLadder(cards, suit);
+    for(const lv of Object.keys(groups).map(Number)){
+      const unit = groups[lv];
+      const r = cardRank(unit[0]);
+      const myLv = rankLadderOf(r);
+      for(const rankStr of RANKS){
+        const otherLv = rankLadderOf(rankStr);
+        if(otherLv <= myLv) continue;
+        if(unit.length === 1){
+          if(remainOf(rankStr) > 0) return false;        // 别人有更大同型单张 → 能管住
+          // 注：副牌单张理论上可被主牌毙，但“对手是否缺该花色”无法精确推断，
+          // 此处采用宽松策略（与玩家 AKQ 可甩的诉求一致），不强制拦截。
+        } else if(unit.length === 2){
+          if(remainOf(rankStr) >= 2) return false;         // 别人有更大对子 → 能管住
+        }
+      }
+    }
+    return true;
   }
 
   function aiChoosePlay(idx){
@@ -626,19 +652,20 @@
       const groups = groupByLadder(cards, s);
       const tractors = tractorsInGroups(groups);
       const pairs = pairsInGroups(groups);
-      const run = longestRun(cards, s);
       if(tractors.length){
         const t = tractors[0];
         options.push({cards: t.cards, pri: 5 + t.size * 0.1, score: sumScore(t.cards)});
-      } else if(run.length >= 2){
-        // 连子清家：长连单优先甩
-        options.push({cards: run, pri: run.length >= 3 ? 4.5 : 3.8, score: sumScore(run)});
       } else if(pairs.length){
         const p = pairs[pairs.length-1];
         options.push({cards: p, pri: 4, score: sumScore(p) * 2});
       } else {
         const c = cards.slice().sort((a,b)=>suitLadder(a)-suitLadder(b))[0];
         options.push({cards: [c], pri: cardScore(c) ? 0.6 : 1, score: cardScore(c)});
+      }
+      // 甩牌：该花色 ≥2 张且记牌确认“都是最大牌、别人管不住”时才整手甩清家
+      // （连单/混合只有在确定无敌时才出，避免乱甩被人压）
+      if(cards.length >= 2 && canThrowSweep(cards, s, idx)){
+        options.push({cards: cards.slice(), pri: 6, score: sumScore(cards)});
       }
     }
     const trumps = hand.filter(isTrump);
@@ -649,6 +676,10 @@
       if(tractors.length) options.push({cards: tractors[0].cards, pri: 3.5, score: 0});
       else if(pairs.length) options.push({cards: pairs[pairs.length-1], pri: 2, score: 0});
       else options.push({cards: [trumps.sort((a,b)=>cardPower(a)-cardPower(b))[0]], pri: 0.5, score: 0});
+      // 主牌甩牌（主牌最大花色，别人不能毙，仅看是否更大主牌）
+      if(trumps.length >= 2 && canThrowSweep(trumps.slice(), 'T', idx)){
+        options.push({cards: trumps.slice(), pri: 3.6, score: 0});
+      }
     }
     if(!options.length) return [hand[0]];
     options.sort((a,b) => (b.pri - a.pri) || (a.score - b.score));
@@ -679,7 +710,7 @@
       const canKill = leadSuit !== 'T' && trumps.length >= n &&
         (leadCombo.type === 'single' ? trumps.length >= 1 :
          leadCombo.type === 'pair' ? pairsInGroups(groupByLadder(trumps,'T')).length >= 1 :
-         (leadCombo.type === 'tractor' || leadCombo.type === 'run') ?
+         (leadCombo.type === 'tractor' || leadCombo.type === 'sweep') ?
             tractorsInGroups(groupByLadder(trumps,'T')).some(t => t.size >= (leadCombo.size||1)) :
          trumps.length >= n);
       if(canKill && wantFight){
@@ -706,8 +737,8 @@
       if(pairs.length) return (!curWinnerIsFriend && (trickScore>=15||endGame)) ? pairs[pairs.length-1] : pairs[0];
       return fill(n);
     }
-    if(leadCombo.type === 'run'){
-      // 连子首出：有对子尽量跟对，否则跟最小单张补够 n 张
+    if(leadCombo.type === 'sweep'){
+      // 甩牌(sweep)首出：有对子尽量跟对，否则跟最小单张补够 n 张（与连子跟牌规则一致）
       const pairs = pairsInGroups(groups);
       if(pairs.length){
         const use = Math.min(pairs.length, Math.floor(n/2));
@@ -769,6 +800,7 @@
     validatePlay, playCards, endTrick, applyResult, judgeTrick,
     analyzeCombo, isTrump, cardPower, cardSuit, cardRank, cardScore, cardDisplay,
     ladderOf, groupByLadder, pairsInGroups, tractorsInGroups, suitOfLead,
-    aiBidDecision, aiBottomDecision, aiChoosePlay,
+    canThrowSweep,
+    aiBidDecision, aiBottomDecision, aiChoosePlay, aiLead, aiFollow,
   };
 })();
