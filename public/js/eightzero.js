@@ -25,7 +25,8 @@
     trumpSuit: null,              // 主花色
     trumpDeclaredBy: -1,          // 亮主者
     trumpDeclaredCount: 0,        // 0=未亮 1=单张亮主 2=对级牌反主
-    dealer: 0,                    // 庄家
+    dealer: 0,                    // 庄家（坐庄者：负责埋底、团队锚点；谁报/反主谁坐庄）
+    dealStarter: 0,               // 发牌轮转起点（固定，保证 100 张均匀每人 25；与 dealer 解耦）
     turn: 0,                      // 当前出牌人
     trickLeader: -1,              // 本轮首出人
     phase: 'idle',                // idle|dealing|bottoming|playing|ended
@@ -98,29 +99,38 @@
   }
 
   // 把一组牌按档分组（只取属于该 suit 的牌）
+  // 级牌特殊处理：主花色级牌保留数值档（可与小王连对）；其他花色级牌按花色隔离（不同花色级牌不成对）
   function groupByLadder(cards, suit){
     const groups = {};
     for(const c of cards){
       const ok = suit === 'T' ? isTrump(c) : (!isTrump(c) && cardSuit(c) === suit);
       if(!ok) continue;
-      const lv = ladderOf(c, suit);
-      (groups[lv] = groups[lv] || []).push(c);
+      let key;
+      if(suit === 'T' && cardRank(c) === STATE.level && !isJoker(c)){
+        key = (cardSuit(c) === STATE.trumpSuit) ? String(ladderOf(c, suit)) : ('L' + cardSuit(c));
+      } else {
+        key = String(ladderOf(c, suit));
+      }
+      (groups[key] = groups[key] || []).push(c);
     }
     return groups;
   }
 
-  // 组内的对子列表（按档从小到大）
+  // 组内的对子列表（按档从小到大）。级牌按花色隔离后，不同花色级牌不会成对。
   function pairsInGroups(groups){
     const pairs = [];
-    for(const lv of Object.keys(groups).map(Number).sort((a,b)=>a-b)){
-      if(groups[lv].length >= 2) pairs.push([groups[lv][0], groups[lv][1]]);
+    for(const k of Object.keys(groups)){
+      const g = groups[k];
+      if(g.length >= 2) pairs.push([g[0], g[1]]);
     }
     return pairs;
   }
 
   // 组内的拖拉机列表（相邻档对子连，每档取2张），按长度降序
   function tractorsInGroups(groups){
-    const lvs = Object.keys(groups).map(Number).filter(lv => groups[lv].length >= 2).sort((a,b)=>a-b);
+    const lvs = Object.keys(groups)
+      .filter(k => !isNaN(Number(k)) && groups[k].length >= 2)
+      .map(Number).sort((a,b)=>a-b);
     const runs = [];
     let run = [];
     for(let i=0;i<lvs.length;i++){
@@ -134,7 +144,7 @@
   }
 
   // ===== 牌型分析 =====
-  // 返回 null（无效）或 {type:'single'|'pair'|'tractor', suit:'T'|花色, size:连对数, cards}
+  // 返回 null（无效）或 {type:'single'|'pair'|'tractor'|'sweep', suit:'T'|花色, size, cards}
   function analyzeCombo(cards){
     const n = cards.length;
     if(!n) return null;
@@ -143,13 +153,16 @@
     if(trumps.length === n){
       if(n === 1) return {type:'single', suit:'T', size:1, cards};
       const groups = groupByLadder(cards, 'T');
-      const lvs = Object.keys(groups).map(Number).sort((a,b)=>a-b);
-      if(Object.values(groups).every(g => g.length === 2)){
-        if(n === 2) return {type:'pair', suit:'T', size:1, cards};
-        for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
-        return {type:'tractor', suit:'T', size:lvs.length, cards};
+      const entries = Object.entries(groups);
+      if(n === 2 && entries.length === 1 && entries[0][1].length === 2) return {type:'pair', suit:'T', size:1, cards};
+      const numKeys = entries.filter(([k]) => !isNaN(Number(k))).map(([k]) => Number(k)).sort((a,b)=>a-b);
+      const allPairs = entries.every(([,g]) => g.length === 2);
+      if(allPairs && numKeys.length >= 2){
+        let cons = true;
+        for(let i=1;i<numKeys.length;i++) if(numKeys[i] !== numKeys[i-1] + 1){ cons = false; break; }
+        if(cons) return {type:'tractor', suit:'T', size:numKeys.length, cards};
       }
-      // 含单张或混合（主牌连单/混合）→ 甩牌(sweep)，首出允许但需校验无敌
+      // 含单张或混合 → 甩牌(sweep)
       return {type:'sweep', suit:'T', size:n, cards};
     }
     // 全副牌
@@ -157,15 +170,17 @@
     if(cards.some(c => cardSuit(c) !== s)) return null;      // 混花色
     if(n === 1) return {type:'single', suit:s, size:1, cards};
     const groups = groupByLadder(cards, s);
-    const lvs = Object.keys(groups).map(Number).sort((a,b)=>a-b);
-    if(Object.values(groups).every(g => g.length === 2)){
-      if(n === 2) return {type:'pair', suit:s, size:1, cards};
-      for(let i=1;i<lvs.length;i++) if(lvs[i]-lvs[i-1] !== 1) return null;
-      return {type:'tractor', suit:s, size:lvs.length, cards};
+    const entries = Object.entries(groups);
+    if(n === 2 && entries.length === 1 && entries[0][1].length === 2) return {type:'pair', suit:s, size:1, cards};
+    const numKeys = entries.filter(([k]) => !isNaN(Number(k))).map(([k]) => Number(k)).sort((a,b)=>a-b);
+    const allPairs = entries.every(([,g]) => g.length === 2);
+    if(allPairs && numKeys.length >= 2){
+      let cons = true;
+      for(let i=1;i<numKeys.length;i++) if(numKeys[i] !== numKeys[i-1] + 1){ cons = false; break; }
+      if(cons) return {type:'tractor', suit:s, size:numKeys.length, cards};
     }
-    // 含单张或混合（副牌连单/混合）→ 甩牌(sweep)，首出允许但需校验无敌
+    // 含单张或混合 → 甩牌(sweep)
     return {type:'sweep', suit:s, size:n, cards};
-    return null;  // 含对又含单（如一对+一张）无效
   }
 
   // 首出花色（'T'=主 或 副花色）
@@ -286,6 +301,7 @@
     STATE.trumpDeclaredBy = -1;
     STATE.trumpDeclaredCount = 0;
     STATE.dealer = (typeof dealer === 'number') ? dealer : 0;
+    STATE.dealStarter = STATE.dealer;  // 发牌轮转起点固定为庄家，保证均匀发牌
     STATE.turn = STATE.dealer;
     STATE.trickLeader = -1;
     STATE.phase = 'dealing';
@@ -311,7 +327,7 @@
   // 发一张牌（从庄家开始逆时针轮流），返回 false 表示发完
   function dealNext(){
     if(STATE.phase !== 'dealing' || STATE.dealCount >= 100) return false;
-    const p = (STATE.dealer + STATE.dealCount) % 4;
+    const p = (STATE.dealStarter + STATE.dealCount) % 4;
     STATE.playerHands[p].push(STATE.deck[STATE.dealCount]);
     STATE.dealCount++;
     return {player: p, card: STATE.deck[STATE.dealCount-1]};
@@ -358,7 +374,8 @@
       STATE.trumpSuit = suit;
       STATE.trumpDeclaredBy = idx;
       STATE.trumpDeclaredCount = 1;
-      log(`${STATE.players[idx]} 亮 ${SUIT_CH[suit]}级牌报主`);
+      STATE.dealer = idx;            // 谁报谁坐庄（反主反庄）
+      log(`${STATE.players[idx]} 亮 ${SUIT_CH[suit]}级牌报主，坐庄`);
       return true;
     }
     if(STATE.trumpDeclaredCount === 1 && STATE.trumpDeclaredBy !== idx){
@@ -368,7 +385,8 @@
       STATE.trumpSuit = suit;
       STATE.trumpDeclaredBy = idx;
       STATE.trumpDeclaredCount = 2;
-      log(`${STATE.players[idx]} 双 ${SUIT_CH[suit]}级牌反主！`);
+      STATE.dealer = idx;            // 反主者坐庄
+      log(`${STATE.players[idx]} 双 ${SUIT_CH[suit]}级牌反主，坐庄！`);
       return true;
     }
     return false;
@@ -618,8 +636,8 @@
       return 2 - known.filter(c => cardRank(c) === rankStr && (isT ? isTrump(c) : !isTrump(c))).length;
     }
     const groups = groupByLadder(cards, suit);
-    for(const lv of Object.keys(groups).map(Number)){
-      const unit = groups[lv];
+    for(const k of Object.keys(groups)){
+      const unit = groups[k];
       const r = cardRank(unit[0]);
       const myLv = rankLadderOf(r);
       for(const rankStr of RANKS){
@@ -644,41 +662,45 @@
 
   function aiLead(idx){
     const hand = STATE.playerHands[idx];
+    const totalLeft = STATE.playerHands.reduce((a,h)=>a+h.length,0);
+    const endGame = totalLeft <= 12;   // 残局：积极抢剩余墩
     const options = [];
+    // 副牌：能甩（确定全最大、无人能管）则整手甩清家；否则出该花色最小单张（保守，不浪费大牌/对子）
     for(const s of SUITS){
       if(s === STATE.trumpSuit) continue;
       const cards = hand.filter(c => !isTrump(c) && cardSuit(c) === s);
       if(!cards.length) continue;
-      const groups = groupByLadder(cards, s);
-      const tractors = tractorsInGroups(groups);
-      const pairs = pairsInGroups(groups);
-      if(tractors.length){
-        const t = tractors[0];
-        options.push({cards: t.cards, pri: 5 + t.size * 0.1, score: sumScore(t.cards)});
-      } else if(pairs.length){
-        const p = pairs[pairs.length-1];
-        options.push({cards: p, pri: 4, score: sumScore(p) * 2});
-      } else {
-        const c = cards.slice().sort((a,b)=>suitLadder(a)-suitLadder(b))[0];
-        options.push({cards: [c], pri: cardScore(c) ? 0.6 : 1, score: cardScore(c)});
-      }
-      // 甩牌：该花色 ≥2 张且记牌确认“都是最大牌、别人管不住”时才整手甩清家
-      // （连单/混合只有在确定无敌时才出，避免乱甩被人压）
       if(cards.length >= 2 && canThrowSweep(cards, s, idx)){
         options.push({cards: cards.slice(), pri: 6, score: sumScore(cards)});
+      } else if(endGame){
+        // 残局积极抢墩：出该花色最大（单/对/拖拉机）
+        const groups = groupByLadder(cards, s);
+        const tractors = tractorsInGroups(groups);
+        const pairs = pairsInGroups(groups);
+        if(tractors.length) options.push({cards: tractors[0].cards, pri: 4, score: sumScore(tractors[0].cards)});
+        else if(pairs.length) options.push({cards: pairs[pairs.length-1], pri: 3.5, score: sumScore(pairs[pairs.length-1])});
+        else { const c = cards.slice().sort((a,b)=>suitLadder(b)-suitLadder(a))[0]; options.push({cards:[c], pri:3, score: cardScore(c)}); }
+      } else {
+        // 不能甩 → 出最小单张（保守，避免把大牌/对子送出去被人压）
+        const smallest = cards.slice().sort((a,b)=>suitLadder(a)-suitLadder(b))[0];
+        options.push({cards: [smallest], pri: 2.5, score: cardScore(smallest)});
       }
     }
+    // 主牌：能甩则甩；否则出最小主牌（残局出最大主牌）
     const trumps = hand.filter(isTrump);
     if(trumps.length){
-      const groups = groupByLadder(trumps, 'T');
-      const tractors = tractorsInGroups(groups);
-      const pairs = pairsInGroups(groups);
-      if(tractors.length) options.push({cards: tractors[0].cards, pri: 3.5, score: 0});
-      else if(pairs.length) options.push({cards: pairs[pairs.length-1], pri: 2, score: 0});
-      else options.push({cards: [trumps.sort((a,b)=>cardPower(a)-cardPower(b))[0]], pri: 0.5, score: 0});
-      // 主牌甩牌（主牌最大花色，别人不能毙，仅看是否更大主牌）
       if(trumps.length >= 2 && canThrowSweep(trumps.slice(), 'T', idx)){
         options.push({cards: trumps.slice(), pri: 3.6, score: 0});
+      } else if(endGame){
+        const groups = groupByLadder(trumps, 'T');
+        const tractors = tractorsInGroups(groups);
+        const pairs = pairsInGroups(groups);
+        if(tractors.length) options.push({cards: tractors[0].cards, pri: 3.2, score: 0});
+        else if(pairs.length) options.push({cards: pairs[pairs.length-1], pri: 3, score: 0});
+        else { const c = trumps.slice().sort((a,b)=>cardPower(b)-cardPower(a))[0]; options.push({cards:[c], pri:2.8, score:0}); }
+      } else {
+        const smallest = trumps.slice().sort((a,b)=>cardPower(a)-cardPower(b))[0];
+        options.push({cards: [smallest], pri: 1.5, score: 0});
       }
     }
     if(!options.length) return [hand[0]];
@@ -730,7 +752,14 @@
     const groups = groupByLadder(must, leadSuit);
     const fill = count => must.concat(others.slice().sort((a,b)=>(cardScore(a)-cardScore(b))||(cardPower(a)-cardPower(b)))).slice(0,count);
     if(leadCombo.type === 'single'){
-      return [must.slice().sort((a,b)=>ladderOf(a,leadSuit)-ladderOf(b,leadSuit))[0]];
+      const sorted = must.slice().sort((a,b)=>ladderOf(a,leadSuit)-ladderOf(b,leadSuit));
+      // 对手领先且有关键分（或残局/抠底）：出能压住的最小牌，低价抢分（团队配合）
+      if(wantFight){
+        const winLadder = ladderOf(judgeTrick().bestCards[0], leadSuit);
+        const winCard = sorted.find(c => ladderOf(c, leadSuit) > winLadder);
+        if(winCard) return [winCard];
+      }
+      return [sorted[0]];
     }
     if(leadCombo.type === 'pair'){
       const pairs = pairsInGroups(groups);

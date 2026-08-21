@@ -12,6 +12,7 @@
   let dealTimer = null;       // 发牌定时器
   let aiTimer = null;         // AI 出牌定时器
   let dealingStarted = false; // 本局是否已启动发牌
+  let selectedStartLevel = '2'; // 自选开始级别（打2/J/A…）
 
   window.GameUI = {
     renderLobby,
@@ -24,6 +25,7 @@
     selectCard,
     confirmPlay,
     newGame,
+    setStartLevel,
     skipDealing,
     confirmBottom,
     buryOriginalBottom,
@@ -34,13 +36,23 @@
   // ===== 大厅 =====
   function renderLobby(){
     if(!currentUser){ return `<div class="empty" style="padding-top:80px;"><div class="emoji">🔒</div><p>请先登录才能玩八十分</p><br><button class="btn btn-primary" style="max-width:200px;margin:0 auto;" onclick="navigate('auth')">去登录</button></div>`; }
+    if(EZ.STATE.phase !== 'idle') selectedStartLevel = EZ.STATE.level; // 进行中/已结束的对局同步显示当前级别
     return `
       <div class="hero">
         <h1>🃏 八十分（升级）</h1>
         <p>经典拖拉机规则 · 逐张发牌 / 亮主反主 / 埋底 / 拖拉机连对</p>
       </div>
       <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px;">
-        <button class="btn btn-primary" onclick="GameUI.newGame()">▶️ 开始新牌局（打 ${EZ.STATE.phase !== 'idle' ? EZ.STATE.level : '2'}）</button>
+        <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;">
+          <div>
+            <div style="font-weight:600;">开始级别</div>
+            <div style="font-size:0.78rem;color:var(--muted,#888);">从指定级别开打，比如直接从 J 开始</div>
+          </div>
+          <select id="start-level-select" onchange="GameUI.setStartLevel(this.value)" style="font-size:1rem;padding:6px 10px;border-radius:8px;border:1px solid #ccc;">
+            ${EZ.LEVEL_ORDER.map(lv => `<option value="${lv}" ${lv === selectedStartLevel ? 'selected' : ''}>打 ${lv}</option>`).join('')}
+          </select>
+        </div>
+        <button class="btn btn-primary" onclick="GameUI.newGame()">▶️ 开始新牌局（打 ${selectedStartLevel}）</button>
         <button class="btn btn-outline" onclick="GameUI.showGameRules()">📖 游戏规则</button>
         <button class="btn btn-outline" onclick="GameUI.loadGameHistory()">🏆 我的战绩</button>
       </div>
@@ -561,6 +573,7 @@
   }
 
   // ===== 新游戏 =====
+  function setStartLevel(lv){ selectedStartLevel = lv; } // 自选开始级别
   function newGame(continueGame){
     stopDealTimer();
     stopAiTimer();
@@ -571,7 +584,7 @@
       EZ.applyResult(); // 换庄 + 升级
       EZ.startNewGame(s.level, s.dealer);
     } else {
-      EZ.startNewGame('2', 0);
+      EZ.startNewGame(selectedStartLevel, 0); // 用大厅所选开始级别
     }
     dealingStarted = true;
     rerender();
