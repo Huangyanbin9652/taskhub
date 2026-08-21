@@ -43,16 +43,14 @@
         <p>经典拖拉机规则 · 逐张发牌 / 亮主反主 / 埋底 / 拖拉机连对</p>
       </div>
       <div style="display:flex;flex-direction:column;gap:12px;margin-top:8px;">
-        <div class="card" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;">
-          <div>
-            <div style="font-weight:600;">开始级别</div>
-            <div style="font-size:0.78rem;color:var(--muted,#888);">从指定级别开打，比如直接从 J 开始</div>
+        <div class="panel">
+          <div class="panel-title">开始级别</div>
+          <div class="panel-sub">选好从哪一级开打，比如直接从 J 开始</div>
+          <div class="level-chips">
+            ${EZ.LEVEL_ORDER.map(lv => `<button type="button" class="chip ${lv === selectedStartLevel ? 'active' : ''}" data-lv="${lv}" onclick="GameUI.setStartLevel('${lv}')">${lv}</button>`).join('')}
           </div>
-          <select id="start-level-select" onchange="GameUI.setStartLevel(this.value)" style="font-size:1rem;padding:6px 10px;border-radius:8px;border:1px solid #ccc;">
-            ${EZ.LEVEL_ORDER.map(lv => `<option value="${lv}" ${lv === selectedStartLevel ? 'selected' : ''}>打 ${lv}</option>`).join('')}
-          </select>
         </div>
-        <button class="btn btn-primary" onclick="GameUI.newGame()">▶️ 开始新牌局（打 ${selectedStartLevel}）</button>
+        <button id="start-game-btn" class="btn btn-primary" onclick="GameUI.newGame()">▶️ 开始新牌局（打 ${selectedStartLevel}）</button>
         <button class="btn btn-outline" onclick="GameUI.showGameRules()">📖 游戏规则</button>
         <button class="btn btn-outline" onclick="GameUI.loadGameHistory()">🏆 我的战绩</button>
       </div>
@@ -573,7 +571,13 @@
   }
 
   // ===== 新游戏 =====
-  function setStartLevel(lv){ selectedStartLevel = lv; } // 自选开始级别
+  function setStartLevel(lv){ // 自选开始级别：同步高亮与按钮文案
+    selectedStartLevel = lv;
+    const chips = document.querySelectorAll('.level-chips .chip');
+    chips.forEach(c => c.classList.toggle('active', c.dataset.lv === lv));
+    const btn = document.getElementById('start-game-btn');
+    if(btn) btn.textContent = `▶️ 开始新牌局（打 ${lv}）`;
+  }
   function newGame(continueGame){
     stopDealTimer();
     stopAiTimer();

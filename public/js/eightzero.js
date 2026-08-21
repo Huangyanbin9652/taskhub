@@ -664,6 +664,9 @@
     const hand = STATE.playerHands[idx];
     const totalLeft = STATE.playerHands.reduce((a,h)=>a+h.length,0);
     const endGame = totalLeft <= 12;   // 残局：积极抢剩余墩
+    const isPartner = sideOf(idx) === 0 && idx !== STATE.dealer; // 庄家对家（帮庄）
+    const dealerHand = STATE.playerHands[STATE.dealer];
+    const dealerSuitCount = s => dealerHand.filter(c => !isTrump(c) && cardSuit(c) === s).length;
     const options = [];
     // 副牌：能甩（确定全最大、无人能管）则整手甩清家；否则出该花色最小单张（保守，不浪费大牌/对子）
     for(const s of SUITS){
@@ -672,6 +675,15 @@
       if(!cards.length) continue;
       if(cards.length >= 2 && canThrowSweep(cards, s, idx)){
         options.push({cards: cards.slice(), pri: 6, score: sumScore(cards)});
+      } else if(isPartner){
+        // 帮庄：出该花色最大牌（或对子）清家，逼对手出大牌，给庄家逃分空间
+        const groups = groupByLadder(cards, s);
+        const pairs = pairsInGroups(groups);
+        const hi = cards.slice().sort((a,b)=>suitLadder(b)-suitLadder(a))[0];
+        const dealerVoid = dealerSuitCount(s) === 0; // 庄家缺门 → 可毙/垫，优先打这门
+        const pri = (dealerVoid ? 4.8 : 4.2) + suitLadder(hi) / 1000; // 同档内高牌优先
+        if(pairs.length) options.push({cards: pairs[pairs.length-1], pri, score: sumScore(pairs[pairs.length-1])});
+        else options.push({cards: [hi], pri, score: cardScore(hi)});
       } else if(endGame){
         // 残局积极抢墩：出该花色最大（单/对/拖拉机）
         const groups = groupByLadder(cards, s);
@@ -722,6 +734,7 @@
     for(const t of STATE.trick) for(const c of t.cards) trickScore += cardScore(c);
     const curWinner = judgeTrick().winner;
     const curWinnerIsFriend = sideOf(curWinner) === sideOf(idx);
+    const isPartner = sideOf(idx) === 0 && idx !== STATE.dealer; // 庄家对家（帮庄，可抢先手）
     const totalLeft = STATE.playerHands.reduce((a,h)=>a+h.length,0);
     const endGame = totalLeft <= 12;            // 残局：总剩余 ≤12 张，积极抢分 / 保底
     const wantFight = !curWinnerIsFriend && (trickScore >= 10 || endGame || STATE.bottomScore > 0);
@@ -753,11 +766,11 @@
     const fill = count => must.concat(others.slice().sort((a,b)=>(cardScore(a)-cardScore(b))||(cardPower(a)-cardPower(b)))).slice(0,count);
     if(leadCombo.type === 'single'){
       const sorted = must.slice().sort((a,b)=>ladderOf(a,leadSuit)-ladderOf(b,leadSuit));
-      // 对手领先且有关键分（或残局/抠底）：出能压住的最小牌，低价抢分（团队配合）
-      if(wantFight){
+      if(!curWinnerIsFriend){
         const winLadder = ladderOf(judgeTrick().bestCards[0], leadSuit);
-        const winCard = sorted.find(c => ladderOf(c, leadSuit) > winLadder);
-        if(winCard) return [winCard];
+        const winCard = sorted.find(c => ladderOf(c, leadSuit) > winLadder); // 能压住的最小牌（最省）
+        // 对手领先：分够/残局/抠底要抢；或庄家对家要抢先手（拿到出牌权，回头清大牌帮庄家逃分）
+        if(winCard && (wantFight || isPartner)) return [winCard];
       }
       return [sorted[0]];
     }
@@ -830,6 +843,7 @@
     analyzeCombo, isTrump, cardPower, cardSuit, cardRank, cardScore, cardDisplay,
     ladderOf, groupByLadder, pairsInGroups, tractorsInGroups, suitOfLead,
     canThrowSweep,
+    settle, computeNextLevel,
     aiBidDecision, aiBottomDecision, aiChoosePlay, aiLead, aiFollow,
   };
 })();

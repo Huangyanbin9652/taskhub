@@ -455,6 +455,12 @@ input, textarea, select { font-family: inherit; font-size: inherit; }
 }
 .sc-note { color: var(--text-lighter); font-size: 0.7rem; }
 
+/* Lobby panel (info box, NOT a playing card) */
+.panel { background: var(--card-bg); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+.panel-title { font-weight: 600; font-size: 0.95rem; margin-bottom: 2px; }
+.panel-sub { font-size: 0.78rem; color: var(--text-lighter); margin-bottom: 12px; }
+.level-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
 .card {
   width: 56px; height: 80px; background: #fff; border-radius: 8px;
   display: flex; align-items: center; justify-content: center; flex-direction: column;
